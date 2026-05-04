@@ -35,23 +35,35 @@ No cloud. No data collection. No API keys. Auto-detects 12 local backends. Your 
 
 ---
 
-## v2.4.1 — Current Release
+## v2.4.3 — Current Release
 
-**Reliability hotfix: bulletproof the Create model picker against any pathological store state.**
+**LM Studio plug-and-play overhaul + theme/UX polish.**
 
-Drop-in patch on top of v2.4.0. One focused fix — no new features, no dependency bumps.
+Drop-in upgrade from v2.4.2. Auto-update prompts on next launch.
+
+This release closes the LM-Studio onboarding gap that several Discord users hit on a truly-fresh box, plus a handful of UI polish items reported during the same sweep.
 
 ### What's fixed
-- **CreateTopControls picker dropdown hardened against any non-array list value** — reported on Discord in `#bug-reports` by @phantomderp: the web UI crashes when clicking the model picker at the top of the Create tab. We'd already added the expected store fields + setters in v2.3.9/v2.4.0 (`imageModelList`, `videoModelList`, `comfyRunning`, `setComfyRunning`), but if the field ever arrives as anything other than an array — stale persisted state from a very old install, Zustand rehydration racing the first render, a corrupted localStorage entry, or an old .exe that predates aa31bab — the `.length` / `.map()` calls would still kill the app on picker-open. Read site now passes the list through `Array.isArray(rawList) ? rawList : []`, so undefined / null / object / string / number all render as the empty-state card instead of crashing.
+- **LM Studio onboarding works on a truly-fresh box** — pre-bootstrap `lms.exe` lookup at `…\Programs\LM Studio\resources\app\.webpack\lms.exe`, plus a two-pass GUI bootstrap dance that launches the GUI minimally and waits for `~/.lmstudio/` to populate when the first `lms bootstrap` doesn't. No more "open LM Studio once and come back" detour.
+- **Skip download when LM Studio is already installed** — `install_lmstudio` short-circuits if it finds an existing install, so toggling the server on no longer triggers a 570 MB re-download.
+- **Onboarding "LM Studio offline → start server" card** — when LM Studio is detected but the server isn't running, the Backends step shows a primary one-click button that starts it. The Ollama-install button hides in that branch.
+- **Settings → AI Backends inline "Start Server" button** — same one-click pattern surfaces in Settings when LM Studio is expanded with the server down. Status dot flips red → green in ~8 s.
+- **Actionable runtime hint** — when LM Studio replies "No LM Runtime found" the assistant message is rewritten as a 3-step "Open LM Studio → Discover → Runtimes → llama.cpp (CPU)" instead of the raw API error. Three vitest unit tests guard the detection (case-insensitive, no false-positive on other 400s).
+- **Recommended starter card unblocked on first launch** — Models step's default sub-tab now derives from what's actually in the curated list, so the Qwen 2.5 0.5B starter shows up on a fresh install instead of an empty step.
+- **Embedding-only models filtered from the picker** — LM Studio's default `text-embedding-nomic-embed-text-v1.5` no longer counts as an "installed model" and no longer shows up in the chat picker.
+- **Dark theme from frame 1** — `<html class="dark">` plus inline `#0a0a0a` body bg plus `useLayoutEffect` in AppShell. Onboarding theme step removed (light is still in Settings → General → Appearance). No more white flash on first paint.
+- **Chat input scrollbar polish** — `.scrollbar-thin::-webkit-scrollbar-button` hidden across all permutations. Clean 6 px thumb, no XP-style up/down arrows.
+- **HF model search no longer crashes the dropdown on repo-path queries** — `baseName` undefined ReferenceError fixed. Search is case-insensitive, and selecting a model that's no longer in the list resets the picker.
 
 ### Stability
-- 2226 / 2226 Vitest tests green (+7 new pathological-state regression tests in `createStore.test.ts`)
-- `tsc --noEmit` clean
-- Bundled JS contains the fix (grep-confirmed in the minified bundle)
-- Dev-preview E2E: injected six pathological types into the store (`undefined`, `null`, `{}`, `"corrupted"`, `42`, populated array), clicked the picker each time — zero errors
-- Installed-binary E2E, happy path: Ollama + ComfyUI + 3 image + 3 video models — picker opens with all six, no crash either mode
-- Installed-binary E2E, true fresh-user: Ollama folder renamed, ComfyUI folder renamed, LU AppData wiped — picker shows "Start ComfyUI to load models" empty-state, no crash either mode; all six tabs (Chat / Create / Compare / Benchmark / Models / Settings) load cleanly
-- No breaking changes, no localStorage migration — upgrade in place
+- `vitest`: 2254 / 2254 green (+3 new unit tests for the LM-Studio runtime-missing rewrite)
+- `cargo test`: 44 / 44 green
+- `tsc --noEmit`: clean
+- Live-verified each fix end-to-end on a wiped Test-VM (LM Studio + `~/.lmstudio` purged, LU AppData reset). End-to-end "pong!" reply confirmed via LM Studio + Qwen 2.5 0.5B (20/8.2k tokens).
+- No breaking changes, no localStorage migration — upgrade in place.
+
+### Heads-up — extra-active first week
+Build environment for this one is different from usual. CI ships the same x64 + Linux installers as always, but to catch anything that slipped through the live-test pass: we'll be checking `#bug-reports` / `#help-*` / GitHub daily for the next ~5 days. If something behaves off after updating, please drop a note — fix turnaround should be fast (a v2.4.4 hotfix lands the same way auto-update did v2.4.3).
 
 For older releases, see [CHANGELOG.md](CHANGELOG.md).
 

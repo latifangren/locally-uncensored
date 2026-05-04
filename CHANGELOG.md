@@ -4,11 +4,54 @@ All notable changes to Locally Uncensored are documented here.
 
 ## [Unreleased]
 
-### Fixed
+## [2.4.3] - 2026-05-04
+
+### Fixed — LM Studio onboarding plug-and-play
+- **Pre-bootstrap `lms.exe` path lookup** — on a freshly-installed LM Studio the `lms` CLI lives at `%LOCALAPPDATA%\Programs\LM Studio\resources\app\.webpack\lms.exe` until the GUI has been launched once. `lmstudio_lms_path()` now uses a three-stage lookup: (1) `~/.lmstudio/bin/lms.exe` (post-bootstrap), (2) the pre-bootstrap webpack path above, (3) `PATH`. Before this, the in-app `install_lmstudio` flow on a true-fresh box died with "lms not found" because the bootstrap step couldn't locate the binary it needed to bootstrap.
+- **Two-pass GUI bootstrap dance** — `install_lmstudio` now runs `lms bootstrap`, and if `~/.lmstudio/bin/lms.exe` is still missing afterward it launches the LM Studio GUI minimally, polls up to 30 s for `~/.lmstudio/` to populate, then retries the bootstrap. The server-start step re-resolves the path after the dance. End-user-visible effect: no more "open LM Studio once and come back" instructions on a fresh install.
+- **Skip download when LM Studio is already installed** — `install_lmstudio` pre-checks via `lmstudio_lms_path().is_some()` and short-circuits the 570 MB download + installer step, jumping straight to bootstrap + server start. Plus a further short-circuit to "complete" if `already_installed && server_running`. Stops a re-download from happening every time someone toggles the server on.
+- **Onboarding "LM Studio offline → start server" card** — `runDetection` now calls `lmstudio_server_status` after `detectLocalBackends` returns. When `lms_present && !running` the Backends step flips into a `lmstudioOfflineDetected` state: headline becomes "LM Studio detected", the primary button reads "Start LM Studio server" and styles as primary, and the Ollama-install button hides. Same `install_lmstudio` Tauri command (with the skip-download short-circuit above) handles the click.
+- **Settings → AI Backends inline "Start Server" button** — `ProviderConfig.tsx` calls `lmstudio_server_status` on mount and after each Test click. When the provider is the `lmstudio` preset, `lms_present && !running` and the connection isn't already 'connected', a green inline `▶ Start Server` button renders between Disable and the status pill. Click runs `start_lmstudio_server`, polls up to 30 s on `running`, then re-tests the connection (status dot flips red → green in ~8 s).
+- **Actionable runtime hint for "No LM Runtime found"** — `openai-provider.ts::parseError` now matches LM Studio's raw API error via `/no\s+lm\s+runtime\s+found/i` and replaces the assistant message with a 3-step "Open LM Studio → Discover → Runtimes → llama.cpp (CPU)" instruction. Sets `code='lmstudio_runtime_missing'` for future UI branches. Three vitest unit tests in `provider-openai.test.ts` cover detection, case-insensitivity, and no false-positive on other 400-class errors.
+
+### Fixed — onboarding & picker
+- **Models step recommended-starter card now unblocked on a truly-fresh install** — the `modelSubTab` initial value is computed from `ONBOARDING_MODELS.some(m => m.uncensored)`. With the v2.4.0 P4 trim that left only Qwen 2.5 0.5B (mainstream), the tab now starts on `'mainstream'` instead of `'uncensored'`, so the Qwen card actually renders. Previously the Models step looked empty on a fresh install — diagnosed in sweep #3 as an `existingModelCount` issue, which was the wrong root cause; sweep #4 found the real one.
+- **Embedding-only models filtered from `existingModelCount`** — `listModels` results now run through an `embed`/`bge-`/`nomic` filter (same pattern as `scanInstalledModels`). LM Studio's default `text-embedding-nomic-embed-text-v1.5` no longer counts toward "user already has a model installed" and no longer pollutes the chat-model picker.
+
+### Fixed — theme & UI polish
+- **Dark theme from frame 1** — `<html class="dark">` set in `index.html` plus inline `#0a0a0a` body background, `useLayoutEffect` in `AppShell` to apply theme synchronously before paint, and the onboarding theme step removed entirely (5 step indicators instead of 6). Light theme remains available in Settings → General → Appearance. Resolves a "is from build to build different, should be black always" report — first-paint flash is gone, theme is consistent across builds.
+- **XP-style scrollbar arrows removed from chat input** — `.scrollbar-thin::-webkit-scrollbar-button` (all `:start/:end/:vertical/:horizontal` permutations) set to `display:none, width:0, height:0`. The chat input `<textarea>` carries `.scrollbar-thin`. Result: clean 6 px thumb, no decorative arrow chrome.
+
+### Fixed — HF model search (carry-over from quiet sweep)
+- **HF search no longer crashes the dropdown on repo-path queries** — `baseName` ReferenceError that fired when the query contained a `/` (e.g. `bartowski/Llama-3.1`) caused the dropdown to render zero hits with a console error. Path-aware parser now extracts the file name correctly.
+- **HF search is case-insensitive** — query and candidate names both `toLowerCase()`-normalized before matching, so `qwen` and `Qwen` return the same set.
+- **Picker resets when the selected model is no longer in the list** — instead of locking on a dead choice, the picker drops the selection back to the placeholder when its current model isn't present in the freshly-fetched list.
+
+### Fixed — Remote Access dev-mode (carries forward from `[Unreleased]` block)
 - **Remote Access in `npm run dev` now surfaces a clear actionable message instead of a cryptic 404 + JSON.parse stacktrace** — reported on Discord in `#bug-reports` by @phantomderp on v2.4.2: clicking the LAN button printed `POST http://localhost:5173/local-api/start-remote-server [HTTP/1.1 404 Not Found]` and clicking Internet showed an `Error: HTTP 404` toast plus `Uncaught (in promise) SyntaxError: JSON.parse: unexpected character at line 1 column 1 of the JSON data`. Root cause: Remote Access is a Tauri-only feature (a Rust axum server, JWT auth, Cloudflare tunnel binary management, mobile-UI static serve — ~3700 lines in `src-tauri/src/commands/remote.rs`). When v2.4.2 added the corresponding `/local-api/*` paths to `src/api/backend.ts`'s endpoint map, no matching middleware was added to `vite.config.ts`, so dev-mode clicks fell through to vite's default 404 HTML page, which the frontend then tried to JSON.parse. End-user impact: zero — the installed `.exe` routes through Tauri's `invoke()` and works as designed. Developer impact: a confusing dead-end when iterating on the UI from `npm run dev`. Mirroring the entire feature in Node middleware would be a maintenance trap, so we keep dev lean and instead: (1) `Sidebar.handleDispatch` and the `remoteStore.startServer` / `restart` / `startTunnel` actions all check `isTauri()` first and short-circuit with `REMOTE_DEV_MODE_ERROR` — a single source-of-truth string that points at `npm run tauri:dev` (Tauri-aware dev mode where Remote works fully) or the installed app; (2) all 12 Remote-related vite middlewares are stubbed to return `HTTP 501 + { error, devModeOnly: true }` as a backstop in case any future caller bypasses the store guards.
 
 ### Tests
-- 5 new regression cases in `remoteStore.test.ts` covering the dev-mode short-circuit: `startServer` / `restart` / `startTunnel` all throw `REMOTE_DEV_MODE_ERROR` when `isTauri()` is false, `backendCall` is never reached, and the error message itself contains the actionable `npm run tauri:dev` hint plus a "desktop app" reference.
+- `vitest`: 2254 / 2254 green (+3 new tests for the LM-Studio runtime-missing rewrite, +5 from the carried-forward Remote dev-mode short-circuit set, +2 adjusted constants-validation cases).
+- `cargo test`: 44 / 44 green (Rust unit tests).
+- `tsc --noEmit`: clean.
+- `cargo check`: clean (one pre-existing dead-code warning on `save_binary_file_dialog`, unrelated to this sweep).
+
+### Verification
+- **Fresh-fresh-box live trace.** LM Studio uninstall (`Remove-Item $LOCALAPPDATA\Programs\"LM Studio"`) + `~/.lmstudio` purge + LU AppData reset → onboarding shows "No local backend detected" → click "Or install LM Studio" → silent install → "Bootstrapping `lms` CLI" log proves `lmstudio_lms_path()` found the pre-bootstrap path (because `~/.lmstudio/bin/` did not exist yet) → Pass-2 GUI flash proves `lmstudio_gui_exe()` populated `~/.lmstudio/` → "Starting LM Studio server..." → "LM Studio is ready (server on :1234)". Total ~1:35 including the download. Sweep-#3 code died at the `lms.exe not found` step.
+- **Skip-download path.** With LM Studio already installed: `install_lmstudio` log shows "LM Studio is already installed — skipping download. Bootstrapping CLI and starting server…", server up at `:1234` in 8 s, zero MB downloaded.
+- **Onboarding offline-detection card.** AppData reset → Backends step shows the new "LM Studio detected" headline + "is installed but its server isn't currently running…" paragraph + primary button "Start LM Studio server". Ollama-install button hidden.
+- **Models step starter card.** Qwen 2.5 0.5B card visible with "Recommended" badge, "0.4 GB · VRAM: 1 GB". Pre-fix the step rendered with only "Skip for now".
+- **GGUF download path.** File lands at `~/.lmstudio/models/bartowski/Qwen2.5-0.5B-Instruct-GGUF/Qwen2.5-0.5B-Instruct-Q4_K_M.gguf` (379.4 MB).
+- **Picker filters embeddings.** With LM Studio's default embedding model present, only `qwen2.5-0.5b-instruct (LM Studio)` shows in the chat picker.
+- **End-to-end inference.** Chat prompt "Hello! Reply with exactly: pong" via LM Studio :1234 + Qwen 2.5 0.5B → "Pong!" (20/8.2k tokens). Full pipe: LU → Rust proxy → LM Studio → Qwen → back.
+- **Settings inline Start-Server button.** With server stopped: Settings → AI Backends → LM Studio expand → green ▶ Start Server button renders → click → "Connected" in 8 s.
+- **Theme dark from frame 1.** Post-AppData-reset launch: dark from frame 1, 5 step indicators (was 6), Welcome → Backends direct, no white flash.
+- **Scrollbar visual.** 20-line test input → 6 px thumb, no arrow buttons. Zoom-verified.
+
+### Notes
+- Drop-in upgrade from v2.4.2. No breaking changes, no localStorage migration. Auto-update prompts on next launch.
+- **Heads-up — extra-active first week.** Build environment for this release was different from usual. CI ships the same x64 + Linux installers as always, but to catch anything that slipped through the live-test pass: `#bug-reports` / `#help-*` / GitHub will be checked daily for the next ~5 days. If something behaves off after updating, please drop a note — fix turnaround should be fast (a v2.4.4 hotfix lands the same way auto-update did v2.4.3).
+- **Carrying forward into next sweep:** AMD video-generation "could not detect model type" + empty-output reports on Threadripper / RX 7900 XTX (vvvxxxvvv on Discord). Internet-Remote feature-request to support `npm run dev`. Beads memory-plugin design (Discussion #34).
 
 ## [2.4.2] - 2026-04-26
 
