@@ -35,35 +35,33 @@ No cloud. No data collection. No API keys. Auto-detects 12 local backends. Your 
 
 ---
 
-## v2.4.3 — Current Release
+## v2.4.4 — Current Release
 
-**LM Studio plug-and-play overhaul + theme/UX polish.**
+**Hotfix: 8 fixes for the v2.4.3 follow-up sweep.**
 
-Drop-in upgrade from v2.4.2. Auto-update prompts on next launch.
+Drop-in hotfix on top of v2.4.3. Auto-update prompts on next launch.
 
-This release closes the LM-Studio onboarding gap that several Discord users hit on a truly-fresh box, plus a handful of UI polish items reported during the same sweep.
+Reports collected on Discord, Reddit, and GitHub Discussions between 2026-05-04 and 2026-05-11. Thanks to **techx69**, **ninjastic2008**, **phantomderp**, **vokurta**, **vvvxxxvvv_80435**, and **Turbulent_Tomato7559** for the repros.
 
 ### What's fixed
-- **LM Studio onboarding works on a truly-fresh box** — pre-bootstrap `lms.exe` lookup at `…\Programs\LM Studio\resources\app\.webpack\lms.exe`, plus a two-pass GUI bootstrap dance that launches the GUI minimally and waits for `~/.lmstudio/` to populate when the first `lms bootstrap` doesn't. No more "open LM Studio once and come back" detour.
-- **Skip download when LM Studio is already installed** — `install_lmstudio` short-circuits if it finds an existing install, so toggling the server on no longer triggers a 570 MB re-download.
-- **Onboarding "LM Studio offline → start server" card** — when LM Studio is detected but the server isn't running, the Backends step shows a primary one-click button that starts it. The Ollama-install button hides in that branch.
-- **Settings → AI Backends inline "Start Server" button** — same one-click pattern surfaces in Settings when LM Studio is expanded with the server down. Status dot flips red → green in ~8 s.
-- **Actionable runtime hint** — when LM Studio replies "No LM Runtime found" the assistant message is rewritten as a 3-step "Open LM Studio → Discover → Runtimes → llama.cpp (CPU)" instead of the raw API error. Three vitest unit tests guard the detection (case-insensitive, no false-positive on other 400s).
-- **Recommended starter card unblocked on first launch** — Models step's default sub-tab now derives from what's actually in the curated list, so the Qwen 2.5 0.5B starter shows up on a fresh install instead of an empty step.
-- **Embedding-only models filtered from the picker** — LM Studio's default `text-embedding-nomic-embed-text-v1.5` no longer counts as an "installed model" and no longer shows up in the chat picker.
-- **Dark theme from frame 1** — `<html class="dark">` plus inline `#0a0a0a` body bg plus `useLayoutEffect` in AppShell. Onboarding theme step removed (light is still in Settings → General → Appearance). No more white flash on first paint.
-- **Chat input scrollbar polish** — `.scrollbar-thin::-webkit-scrollbar-button` hidden across all permutations. Clean 6 px thumb, no XP-style up/down arrows.
-- **HF model search no longer crashes the dropdown on repo-path queries** — `baseName` undefined ReferenceError fixed. Search is case-insensitive, and selecting a model that's no longer in the list resets the picker.
+- **LM Studio system-wide install now detected** (techx69) — `lmstudio_lms_path()` walks `%PROGRAMFILES%`, `%PROGRAMFILES(X86)%`, `%PROGRAMW6432%`, plus a registry sweep of `Uninstall\…\InstallLocation`. Soft-detect via a bounded walk of `~/.lmstudio/models/` for GGUFs means users with models on disk but the server down get a **"Start LM Studio server"** primary CTA instead of "no models found".
+- **Multi-ComfyUI picker in onboarding** (ninjastic2008) — new `detect_all_comfyui_installs` enumerates every ComfyUI on disk with provenance tags (config.json, deep home scan, etc.). When more than one match exists the user picks explicitly; single-hit and zero-hit cases keep the previous auto-pick / install-fresh flow.
+- **ComfyUI install: Cancel + disk-pressure pre-flight + ETA** (techx69) — the 45-min hang case now has a Cancel button (cleanly kills git/pip child via `Arc<AtomicBool>` poll), a `< 5 GB free` warning before the pip step kicks off, and a rolling ETA next to the elapsed timer.
+- **PyTorch wheels respect GPU compute capability** (vokurta — RTX 6000 Blackwell) — `nvidia-smi --query-gpu=compute_cap` routes SM 12.0+ to `cu128`, everything else to `cu121`. Fixes `CUDA error: no kernel image is available for execution on the device` on Blackwell silicon.
+- **TokenCounter respects the Settings `maxTokens` override live** (phantomderp) — header re-renders on every settings tick instead of caching the model manifest value at mount.
+- **DownloadBadge X-button cancels the Rust pull stream** (phantomderp) — `dismissPull` now aborts the `AbortController` AND invokes `cancel_model_pull`. No more respawn from late `pull-progress` events, no more half-installed models in Ollama.
+- **Agent-Mode hint when a model emits `<tool_call>` JSON without the toggle on** (phantomderp) — amber banner with a one-click "Enable Agent" button instead of rendering raw JSON.
+- **Video workflow architecture install hints + .webp warning** (vvvxxxvvv_80435, Turbulent_Tomato7559) — CogVideoX, FramePack, Pyramid Flow, and Allegro throw a typed `WorkflowUnavailableError` with `installHint: { pack, url }` when their wrapper nodes are missing instead of producing the cryptic "could not detect model type" error or an animated `.webp` instead of an `.mp4`. The Create flow also warns up front when `VHS_VideoCombine` is missing.
 
 ### Stability
-- `vitest`: 2254 / 2254 green (+3 new unit tests for the LM-Studio runtime-missing rewrite)
-- `cargo test`: 44 / 44 green
-- `tsc --noEmit`: clean
-- Live-verified each fix end-to-end on a wiped Test-VM (LM Studio + `~/.lmstudio` purged, LU AppData reset). End-to-end "pong!" reply confirmed via LM Studio + Qwen 2.5 0.5B (20/8.2k tokens).
+- `vitest`: 93 files / 2264 tests green (+10 vs. v2.4.3 for cancel propagation and install-hint coverage)
+- `cargo test --release`: 52 passed (+8 for `parse_compute_cap_output` covering Ampere / Ada / Hopper / Blackwell / multi-GPU pick-highest / edge cases)
+- `tsc --noEmit`: clean, `cargo check`: clean (1 dead-code warning, pre-existing)
+- Phase 1 + Phase 2 live-E2E via Computer-Use: 5/8 bugs verified live in both configured-state and complete-fresh-state runs. 3 remaining (ComfyUI install cancel, wrapper workflows, Blackwell wheels) are code + unit-test verified — invasive to validate live without Blackwell silicon, a 100%-busy drive, or CogVideoX wrapper nodes installed.
 - No breaking changes, no localStorage migration — upgrade in place.
 
-### Heads-up — extra-active first week
-Build environment for this one is different from usual. CI ships the same x64 + Linux installers as always, but to catch anything that slipped through the live-test pass: we'll be checking `#bug-reports` / `#help-*` / GitHub daily for the next ~5 days. If something behaves off after updating, please drop a note — fix turnaround should be fast (a v2.4.4 hotfix lands the same way auto-update did v2.4.3).
+### Heads-up
+Same as the v2.4.3 sweep: `#bug-reports` / `#help-*` / GitHub will be checked daily for the next few days for any regression. v2.4.4 is a Windows + Linux release; macOS is not part of this build.
 
 For older releases, see [CHANGELOG.md](CHANGELOG.md).
 
