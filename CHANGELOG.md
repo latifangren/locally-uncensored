@@ -4,6 +4,44 @@ All notable changes to Locally Uncensored are documented here.
 
 ## [Unreleased]
 
+## [2.4.8] - 2026-05-23
+
+Drop-in hotfix on top of v2.4.6. v2.4.7 was tagged but not separately released, so v2.4.8 ships its six fixes alongside two new ones plus a UX polish: nine changes total since the last public release.
+
+### Fixed — Model Manager
+
+- **Text models in Discover keep their INSTALLED badge after restart** (Bug S — leonsk29 GH #43). Pre-v2.4.8 `isModelFullyInstalled` in `src/components/models/DiscoverModels.tsx` only consulted the in-memory `downloads` store, which is empty after a relaunch. A model installed yesterday looked uninstalled today. v2.4.8 also matches against the provider model list (`useModels().models`) for Ollama tags and for HuggingFace GGUF downloads pulled in via `hf.co/<repo>:<quant>` references, so whatever Ollama and LM Studio actually have on disk surfaces correctly. Session downloads remain a fast-path signal that doesn't wait for a `fetchModels()` round-trip.
+
+- **`canPull:false` text models get a clickable HuggingFace link** (Bug T — leonsk29 GH #44). Curated entries that have a HF page but no GGUF on day-one (Qwen 3.6 27B Samantha, GLM 5.1 754B MoE) render with a green "Available" badge instead of a Download button. Before v2.4.8 there was no UI to open the linked HF page. v2.4.8 adds an external-link icon button next to the Available badge for those entries.
+
+### Fixed — LM Studio server-off banner UX polish
+
+- **Dismiss-able with neutral chrome** (Bug Q polish). The v2.4.7 LM Studio server-off banner in the model picker was painted amber/gold and clashed with the surrounding dropdown. v2.4.8 switches to neutral `bg-white/[0.03]` + `text-gray-300/200` and adds a small X in the top-right to dismiss. The dismiss flag lives at module-scope (not React state) so it survives the dropdown unmount/remount cycle inside one LU run, but is not persisted to localStorage — the hint reappears on the next launch if the user forgot to start the LM Studio server.
+
+### Included from v2.4.7 (which never shipped as its own release)
+
+All six v2.4.7 fixes ride along — see the [2.4.7] section below for full detail. Brief recap:
+
+- **Bug M** — Benchmark tok/s now matches actual chat throughput. Ollama path prefers server-reported `eval_count` / `eval_duration`; OpenAI-compat falls back to wall-clock when streaming is buffered.
+- **Bug N** — `install_comfyui` + `install_custom_node` probe `git --version` before clone and surface a "Install Git for Windows" hint when missing or non-native.
+- **Bug O** — Anthropic provider's `messagesUrl()` collapses a trailing `/v1` so proxy users with `https://proxy.example/v1` baseUrl no longer get `…/v1/v1/messages`.
+- **Bug P** — Image / video generation timeouts now configurable in Settings (defaults 20 min image / 60 min video, range 1–480 min).
+- **Bug Q** — Chat model picker shows "Start LM Studio Server" banner when LM Studio is installed but its HTTP server is off.
+- **Bug R** — Custom ComfyUI save nodes' outputs now surface in LU's gallery (generic extractor accepts any keyed array of file-shaped objects).
+
+### Stability
+
+- `vitest`: **2306 tests** green.
+- `cargo test --release`: **100 passed + 1 ignored** (incl. live `git_probe_live_on_this_host`).
+- `tsc --noEmit`: clean. `cargo check`: clean (pre-existing dead-code warnings only).
+- No breaking changes, no localStorage migration — upgrade in place.
+
+### Heads-up
+
+v2.4.8 is a Windows + Linux release; macOS is not part of this build. `#bug-reports` / `#help-*` / GitHub will be monitored daily for regression reports.
+
+Still investigating: OpenRouter half of 0yagizz's report (needs F12 console output to repro).
+
 ## [2.4.7] - 2026-05-22
 
 Drop-in hotfix on top of v2.4.6. Five bugs: four user-reported (M — Discord nightmare13740; N — GH #40 juliandiggins-stack; O — Discord 0yagizz; P — Discord ake0n_official; R — GH Discussion #6 silentrunningcaUSA) plus internal hardening on the ComfyUI history-output extractor.

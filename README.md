@@ -35,30 +35,33 @@ No cloud. No data collection. No API keys. Auto-detects 12 local backends. Your 
 
 ---
 
-## v2.4.7 — Current Release
+## v2.4.8 — Current Release
 
-**Hotfix: 6 fixes on top of v2.4.6.** All user-reported.
+**Hotfix: 8 fixes on top of v2.4.6.** All user-reported. v2.4.7 was tagged but not separately released; its six fixes ship together with v2.4.8.
 
 Auto-update prompts on next launch.
 
 ### What's fixed
-- **Benchmark tok/s now matches actual chat throughput** (Bug M — nightmare13740 Discord). Pre-v2.4.7 the benchmark counted time-to-first-token + stream init in the tok/s denominator, so any local model looked slower in the Benchmark tab than in real chat. On nightmare13740's RTX 4070 Laptop 8 GB + gemma4:e4b: ollama CLI 30 tok/s, manual chat 23–25 tok/s, pre-v2.4.7 benchmark 12 tok/s. v2.4.7 starts the clock at first-token-received and (for Ollama) prefers the server-reported `eval_count` / `eval_duration` from the final stream chunk, with a wall-clock fallback for OpenAI-compat providers when streaming gets buffered. End result: benchmark matches CLI / chat baselines on every provider.
+- **Text models in Discover keep their INSTALLED badge after restart** (Bug S — leonsk29 GH #43). Pre-v2.4.8 the badge only lit up if the download finished in the current session, so a model installed yesterday looked uninstalled today. v2.4.8 also matches against the provider model list (Ollama tags directly, plus GGUF downloads via `hf.co/<repo>:<quant>` references), so whatever Ollama / LM Studio actually have on disk is what the Discover grid shows.
+- **`canPull:false` text models now get a clickable HuggingFace link** (Bug T — leonsk29 GH #44). Qwen 3.6 27B Samantha and GLM 5.1 754B MoE both have HF pages but no GGUF on day-one, so they show up as Available rather than downloadable. Before this they had no UI to open the HF page from inside LU. v2.4.8 adds the external-link button next to the Available badge.
+- **LM Studio server-off banner is dismiss-able and matches the dropdown chrome** (Bug Q UX polish). The v2.4.7 banner that surfaces "Start LM Studio Server" in the model picker had amber styling that clashed with the rest of the dropdown. v2.4.8 switches to neutral white/gray and adds an X to dismiss. Dismiss sticks across dropdown re-opens within the same LU session but is not persisted, so the hint resurfaces on the next launch in case the user forgot to start the server.
+- **Benchmark tok/s now matches actual chat throughput** (Bug M — nightmare13740 Discord). Pre-v2.4.7 the benchmark counted time-to-first-token + stream init in the tok/s denominator, so any local model looked slower in the Benchmark tab than in real chat. On nightmare13740's RTX 4070 Laptop 8 GB + gemma4:e4b: ollama CLI 30 tok/s, manual chat 23–25 tok/s, pre-fix benchmark 12 tok/s. v2.4.8 starts the clock at first-token-received and (for Ollama) prefers the server-reported `eval_count` / `eval_duration` from the final stream chunk, with a wall-clock fallback for OpenAI-compat providers when streaming gets buffered. End result: benchmark matches CLI / chat baselines on every provider.
 - **Windows ComfyUI install probes `git --version` before clone** (Bug N — juliandiggins-stack GH #40). If a WSL / Linux-mounted git is first on PATH, the previous code let the clone start and die mid-flight with cryptic stderr. New tri-state probe (Native / NonNative / Missing) either proceeds silently, surfaces a clear "install Git for Windows" hint when missing, or logs a soft warning when a non-native git might still work.
-- **Anthropic custom-proxy provider no longer double-prefixes `/v1`** (Bug O — 0yagizz Discord). Users pointing the Anthropic provider at a proxy (claude-relay-server, LiteLLM, opencode-zen) whose docs end the baseUrl with `/v1` got a silent 404 on `…/v1/v1/messages`. v2.4.7 collapses the duplicate.
-- **Image / video generation timeouts now configurable in Settings** (Bug P — ake0n_official Discord). CPU-only / iGPU users finished sampling mid-run when the previous hard-coded 20-min image cap hit. v2.4.7 surfaces both image and video timeouts as numeric inputs (defaults stay 20 min / 60 min, range 1–480 min).
-- **Chat model picker surfaces "Start LM Studio Server" inline when LM Studio is installed but its server is off** (Bug Q — wakeywakeynow GH #41). Symptom was "i am running lm studio but i can't choose any models i have installed!!!!" — root cause: LM Studio's HTTP server doesn't auto-start with the app, so the user has models on disk but the model picker silently dropped LM Studio. v2.4.7 detects the installed-but-off state and renders an inline banner in the picker with a working Start Server button; clicking it kicks off the LM Studio server via the existing `start_lmstudio_server` Tauri command and re-populates the model list without restarting LU.
-- **Custom ComfyUI save nodes' outputs now surface in LU's gallery** (Bug R — silentrunningcaUSA GH Discussion #6). Pre-v2.4.7 LU only scraped `images` / `gifs` / `videos` from the history payload, missing every community workflow that uses a non-canonical save node (audio, custom metadata, CivitAI flows). v2.4.7 generic extractor accepts any keyed array of file-shaped objects.
+- **Anthropic custom-proxy provider no longer double-prefixes `/v1`** (Bug O — 0yagizz Discord). Users pointing the Anthropic provider at a proxy (claude-relay-server, LiteLLM, opencode-zen) whose docs end the baseUrl with `/v1` got a silent 404 on `…/v1/v1/messages`. v2.4.8 collapses the duplicate.
+- **Image / video generation timeouts now configurable in Settings** (Bug P — ake0n_official Discord). CPU-only / iGPU users finished sampling mid-run when the previous hard-coded 20-min image cap hit. v2.4.8 surfaces both image and video timeouts as numeric inputs (defaults stay 20 min / 60 min, range 1–480 min).
+- **Chat model picker surfaces "Start LM Studio Server" inline when LM Studio is installed but its server is off** (Bug Q — wakeywakeynow GH #41). Symptom was "i am running lm studio but i can't choose any models i have installed!!!!" — root cause: LM Studio's HTTP server doesn't auto-start with the app, so the user has models on disk but the model picker silently dropped LM Studio. v2.4.8 detects the installed-but-off state and renders an inline banner in the picker with a working Start Server button; clicking it kicks off the LM Studio server via the existing `start_lmstudio_server` Tauri command and re-populates the model list without restarting LU.
+- **Custom ComfyUI save nodes' outputs now surface in LU's gallery** (Bug R — silentrunningcaUSA GH Discussion #6). Pre-v2.4.8 LU only scraped `images` / `gifs` / `videos` from the history payload, missing every community workflow that uses a non-canonical save node (audio, custom metadata, CivitAI flows). v2.4.8 generic extractor accepts any keyed array of file-shaped objects.
 
 ### Stability
-- `vitest`: **2306 tests** green (+22 across Bug M, O, R).
-- `cargo test --release`: **100 passed + 1 ignored** (+11 for Bug N's `WindowsGitState` matrix).
+- `vitest`: **2306 tests** green.
+- `cargo test --release`: **100 passed + 1 ignored** (incl. live `git_probe` host probe).
 - `tsc --noEmit`: clean. `cargo check`: clean (pre-existing dead-code warnings only).
 - No breaking changes, settings auto-migrate with safe defaults.
 
 ### Heads-up
-v2.4.7 is a Windows + Linux release; macOS is not part of this build. `#bug-reports` / `#help-*` / GitHub will be monitored daily for regression reports.
+v2.4.8 is a Windows + Linux release; macOS is not part of this build. `#bug-reports` / `#help-*` / GitHub will be monitored daily for regression reports.
 
-Still investigating: OpenRouter half of 0yagizz's report (needs F12 console output to repro). Carried into v2.4.8 outreach queue.
+Still investigating: OpenRouter half of 0yagizz's report (needs F12 console output to repro).
 
 For previous release notes (v2.4.6 — 1 bug, v2.4.5 — 14 bugs), see [CHANGELOG.md](CHANGELOG.md).
 
