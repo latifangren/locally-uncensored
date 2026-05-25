@@ -19,7 +19,10 @@
  * legacy shared folder.
  */
 
+import type { AgentWorkspace } from '../types/agent-workspace'
+
 let activeChatId: string | null = null
+let activeWorkspace: AgentWorkspace | null = null
 
 export function setActiveChatId(id: string | null | undefined): void {
   activeChatId = id ? String(id) : null
@@ -31,6 +34,73 @@ export function getActiveChatId(): string | null {
 
 export function clearActiveChatId(): void {
   activeChatId = null
+  activeWorkspace = null
+}
+
+// ── Multi-Repo Agent (Sprint C #8 from uselu) ──────────────────
+//
+// When the agent loop runs in a 'folder' workspace (vs the per-chat
+// sandbox), the bridge resolves relative paths against `ws.path` and
+// the system prompt advertises any additional repo paths in `extraPaths`
+// so the model can address them by absolute path. Use case: "sync the
+// API in repo-A with the client in repo-B" — primary = repo-A,
+// extras = [repo-B].
+
+/**
+ * Pin the active workspace for the current agent loop. Called by
+ * useAgentChat / useCodex right after setActiveChatId. Sandbox mode
+ * passes null so the bridge falls back to ~/agent-workspace/<slug>/.
+ */
+export function setActiveWorkspace(ws: AgentWorkspace | null | undefined): void {
+  if (ws && ws.kind === 'folder' && ws.path) {
+    // Defensive: filter out blanks + dedupe extras + drop the primary if
+    // a caller accidentally listed it as both. Keeps the public shape
+    // stable for downstream readers (system prompt + chatCtx).
+    const cleanedExtras = Array.isArray(ws.extraPaths)
+      ? Array.from(
+          new Set(
+            ws.extraPaths
+              .filter((p): p is string => typeof p === 'string' && p.length > 0)
+              .filter((p) => p !== ws.path),
+          ),
+        )
+      : []
+    activeWorkspace = {
+      kind: 'folder',
+      path: ws.path,
+      extraPaths: cleanedExtras.length > 0 ? cleanedExtras : undefined,
+    }
+  } else {
+    // Sandbox (or unset) → leave pointer null so the bridge falls back
+    // to its own per-chat sandbox path. Setting it to { kind: 'sandbox' }
+    // would just duplicate state the bridge already owns.
+    activeWorkspace = null
+  }
+}
+
+export function getActiveWorkspace(): AgentWorkspace | null {
+  return activeWorkspace
+}
+
+/**
+ * Render the workspace section appended to the agent / Codex system
+ * prompt. Empty string when the loop is in sandbox mode (the bridge
+ * already knows its own sandbox path — no need to tell the model).
+ */
+export function renderWorkspaceSection(ws: AgentWorkspace | null): string {
+  if (!ws || ws.kind !== 'folder' || !ws.path) return ''
+  const extras = ws.extraPaths ?? []
+  if (extras.length === 0) {
+    return `\n\nPrimary workspace: ${ws.path}`
+  }
+  const lines = [
+    '',
+    '',
+    'Workspaces (relative paths resolve against the primary; address extras by absolute path):',
+    `- Primary:  ${ws.path}`,
+    ...extras.map((p) => `- Extra:    ${p}`),
+  ]
+  return lines.join('\n')
 }
 
 /**
