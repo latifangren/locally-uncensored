@@ -158,6 +158,11 @@ fn main() {
             commands::proxy::proxy_localhost_stream,
             commands::proxy::pull_model_stream,
             commands::proxy::cancel_model_pull,
+            // Codex / Sprint C #7 — long-running background shell tasks
+            commands::bg_tasks::shell_task_start,
+            commands::bg_tasks::shell_task_status,
+            commands::bg_tasks::shell_task_kill,
+            commands::bg_tasks::shell_task_list,
             // Window management
             commands::process::show_window,
         ])

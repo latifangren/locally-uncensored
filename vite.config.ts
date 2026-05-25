@@ -1913,6 +1913,17 @@ function comfyLauncher(): Plugin {
 
 export default defineConfig({
   plugins: [react(), tailwindcss(), comfyLauncher()],
+  // v2.5.0 (uselu Phase 8 backport): strip console.log/info/debug from
+  // production builds via esbuild — keeps warn/error so genuine issues
+  // still surface in browser devtools when a power user opens them.
+  // Mirrors uselu's Next.js `compiler.removeConsole` config; vite's
+  // build pipeline gets the same effect through its esbuild step.
+  esbuild: {
+    drop: process.env.NODE_ENV === 'production' ? ['debugger'] : [],
+    pure: process.env.NODE_ENV === 'production'
+      ? ['console.log', 'console.info', 'console.debug']
+      : [],
+  },
   server: {
     port: 5173,
     cors: true,
