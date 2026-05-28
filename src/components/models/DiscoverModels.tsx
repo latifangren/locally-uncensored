@@ -17,7 +17,9 @@ import { useModels } from '../../hooks/useModels'
 import { useDownloadStore } from '../../stores/downloadStore'
 import { useProviderStore } from '../../stores/providerStore'
 import { useSettingsStore } from '../../stores/settingsStore'
+import { useModelStore } from '../../stores/modelStore'
 import { useWorkflowStore } from '../../stores/workflowStore'
+import { getProviderIdFromModel } from '../../api/providers'
 import { hfUrlToOllamaRef, hfUrlToLmStudioSubdir } from '../../lib/hf-to-provider'
 import { GlassCard } from '../ui/GlassCard'
 import { GlowButton } from '../ui/GlowButton'
@@ -176,6 +178,12 @@ export function DiscoverModels({ category }: Props) {
   // Provider state for model path detection
   const providers = useProviderStore(s => s.providers)
   const hfOverride = useSettingsStore(s => s.settings.hfDownloadPathOverride)
+  // Bug Y/a v2.5.0 — Aldrich Ironhart Discord. We need to know which provider
+  // the user is actually chatting against, not just which one is enabled,
+  // because both can be enabled at once and the active picker decides where
+  // the file should land. `activeModel` is `<providerId>::<id>` for non-Ollama
+  // backends and a bare name for Ollama.
+  const activeChatModel = useModelStore(s => s.activeModel)
   const [hfModelPath, setHfModelPath] = useState<string | null>(null)
   const { pullModel, models: installedModels, fetchModels } = useModels()
 
@@ -307,6 +315,32 @@ export function DiscoverModels({ category }: Props) {
     if (model.filename && model.downloadUrl) {
       const ref = hfUrlToOllamaRef(model.downloadUrl, model.filename)?.toLowerCase()
       if (ref && installedOllamaTags.includes(ref)) return true
+    }
+
+    // Bug Y/b v2.5.0 — Aldrich Ironhart Discord. Pre-v2.5.0 isModelFullyInstalled
+    // only checked Ollama tags. After a restart, GGUFs that LU itself wrote
+    // to LM Studio's scan dir would never light up the INSTALLED badge,
+    // because LM Studio surfaces them by file basename in the openai-compat
+    // listing rather than by an Ollama-style hf.co tag. Match by filename
+    // (case-insensitive, with/without trailing `.gguf`).
+    if (model.filename) {
+      const wantBase = model.filename.toLowerCase().replace(/\.gguf$/, '')
+      const installedLmStudio = installedModels.filter(m => {
+        if (m.provider !== 'openai') return false
+        const pname = (m.providerName || '').toLowerCase()
+        return pname.includes('lm studio') || pname.includes('lmstudio')
+      })
+      for (const m of installedLmStudio) {
+        const candidates = [m.model, m.name]
+          .filter(Boolean)
+          .map(s => String(s).toLowerCase())
+        for (const c of candidates) {
+          const cBase = c.replace(/\.gguf$/, '')
+          if (cBase === wantBase || cBase.endsWith(`/${wantBase}`) || cBase.endsWith(`\\${wantBase}`)) {
+            return true
+          }
+        }
+      }
     }
 
     return false
@@ -476,8 +510,32 @@ export function DiscoverModels({ category }: Props) {
   }
 
   const handleTextDownload = async (model: DiscoverModel) => {
-    // Ollama-native models: use ollama pull (registry path).
+    // Bug Y/a v2.5.0 — Aldrich Ironhart Discord. Pre-v2.5.0 we picked the
+    // download backend by "whichever is enabled" with LM Studio winning when
+    // both were on. That decoupled the download path from the active chat
+    // picker: a user chatting on LM Studio could click Download and the
+    // file would land in Ollama's store (or vice versa), invisible to the
+    // chat side. Fix: derive the target backend from the *active chat
+    // model*. If no active model yet (first run, brand new install), fall
+    // back to the previous enabled-wins logic so the download still works.
+    const activeProviderId = activeChatModel ? getProviderIdFromModel(activeChatModel) : null
+    const isActiveLmStudio = activeProviderId === 'openai' && (providers.openai?.name || '').toLowerCase().includes('lm studio')
+    const isActiveOllama = activeProviderId === 'ollama'
+
+    // Ollama-native models: only meaningful with Ollama present. If the user
+    // is chatting on LM Studio and clicks one of these (e.g. Qwen3.6 35B
+    // listed only by Ollama tag), warn instead of silently pulling into a
+    // backend the user can't see from chat.
     if (model.ollamaModel) {
+      const ollamaOn = !!providers.ollama?.enabled
+      if (!ollamaOn) {
+        setInstallError(`${model.name} is an Ollama-only model. Enable the Ollama provider (Settings → Providers) before downloading.`)
+        return
+      }
+      if (activeProviderId && !isActiveOllama) {
+        setInstallError(`${model.name} can only run on Ollama. Switch the chat picker to an Ollama model first, then download.`)
+        return
+      }
       try {
         await pullModel(model.ollamaModel)
       } catch (e) {
@@ -488,17 +546,15 @@ export function DiscoverModels({ category }: Props) {
     }
     if (!model.downloadUrl || !model.filename) return
 
-    // HF GGUF: which backend will actually consume this file?
-    //   - LM Studio explicitly enabled (openai provider with LM Studio name)
-    //     → nest under <user>/<repo>/ so its scanner picks it up.
-    //   - Otherwise default to Ollama (always-on by default), pull via
-    //     /api/pull as `hf.co/<user>/<repo>:<quant>`.
-    // Why: a raw .gguf in `~/.ollama/models` or in `~/.lmstudio/models/`
-    // (top-level) is silently ignored by both runtimes. That mismatch is
-    // the bug behind the "downloaded model never appears" reports.
-    const lmStudioOn = !!providers.openai?.enabled && (providers.openai?.name || '').toLowerCase().includes('lm studio')
-    const ollamaOn = !!providers.ollama?.enabled
-    const useOllamaPath = !lmStudioOn && ollamaOn
+    // HF GGUF: route by active chat model. If neither side has an active
+    // model yet (first-launch with downloads enabled), fall back to the
+    // old enabled-wins logic so we don't deadlock empty-state users.
+    const lmStudioEnabled = !!providers.openai?.enabled && (providers.openai?.name || '').toLowerCase().includes('lm studio')
+    const ollamaEnabled = !!providers.ollama?.enabled
+    let useOllamaPath: boolean
+    if (isActiveOllama) useOllamaPath = true
+    else if (isActiveLmStudio) useOllamaPath = false
+    else useOllamaPath = !lmStudioEnabled && ollamaEnabled // legacy fallback
 
     if (useOllamaPath) {
       const ref = hfUrlToOllamaRef(model.downloadUrl, model.filename)
