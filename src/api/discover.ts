@@ -367,9 +367,18 @@ function sortByRelease(models: DiscoverModel[]): DiscoverModel[] {
 export function getUncensoredTextModels(): DiscoverModel[] {
   return sortByRelease([
     // ── HOT: Hermes 3 ──
-    { name: 'Hermes 3 Llama 3.2 3B', description: 'NousResearch Hermes 3 — uncensored + native tool calling. Runs on 8 GB RAM, CPU-only.', pulls: '500K+', tags: ['3B', 'Q4_K_M', '2 GB'], updated: 'Hot', agent: true, lightweight: true, released: '2024-08', downloadUrl: HF('bartowski/Hermes-3-Llama-3.2-3B-GGUF', 'Hermes-3-Llama-3.2-3B-Q4_K_M.gguf'), filename: 'Hermes-3-Llama-3.2-3B-Q4_K_M.gguf', sizeGB: 2 },
-    { name: 'Hermes 3 Llama 3.1 8B', description: 'NousResearch Hermes 3 — uncensored + native tool calling. THE agent model.', pulls: '500K+', tags: ['8B', 'Q4_K_M', '5 GB'], updated: 'Hot', agent: true, released: '2024-08', downloadUrl: HF('bartowski/Hermes-3-Llama-3.1-8B-GGUF', 'Hermes-3-Llama-3.1-8B-Q4_K_M.gguf'), filename: 'Hermes-3-Llama-3.1-8B-Q4_K_M.gguf', sizeGB: 5 },
-    { name: 'Hermes 3 Llama 3.1 70B', description: 'NousResearch Hermes 3 70B — maximum intelligence, uncensored.', pulls: '500K+', tags: ['70B', 'Q4_K_M', '42 GB'], updated: 'Hot', agent: true, released: '2024-08', downloadUrl: HF('bartowski/Hermes-3-Llama-3.1-70B-GGUF', 'Hermes-3-Llama-3.1-70B-Q4_K_M.gguf'), filename: 'Hermes-3-Llama-3.1-70B-Q4_K_M.gguf', sizeGB: 42 },
+    // Bug Z/b v2.5.0 — leonsk29 GH #48. Pre-v2.5.0 these pointed at
+    // `bartowski/Hermes-3-Llama-*-GGUF`. leon's 2026-05-26 CLI repro
+    // `ollama pull hf.co/bartowski/Hermes-3-Llama-3.1-8B-GGUF:Q4_K_M`
+    // returned HTTP 400 "Repository is not GGUF or is not compatible with
+    // llama.cpp" on current Ollama. Switched to `mradermacher/...-GGUF`
+    // mirrors which produce llama.cpp-compatible quants (verified all
+    // three repos host Q4_K_M files of the expected size). Note the
+    // filename convention: mradermacher uses `.` between model name and
+    // quant (e.g. `Hermes-3-Llama-3.1-8B.Q4_K_M.gguf`), bartowski uses `-`.
+    { name: 'Hermes 3 Llama 3.2 3B', description: 'NousResearch Hermes 3 — uncensored + native tool calling. Runs on 8 GB RAM, CPU-only.', pulls: '500K+', tags: ['3B', 'Q4_K_M', '2 GB'], updated: 'Hot', agent: true, lightweight: true, released: '2024-08', downloadUrl: HF('mradermacher/Hermes-3-Llama-3.2-3B-GGUF', 'Hermes-3-Llama-3.2-3B.Q4_K_M.gguf'), filename: 'Hermes-3-Llama-3.2-3B.Q4_K_M.gguf', sizeGB: 2 },
+    { name: 'Hermes 3 Llama 3.1 8B', description: 'NousResearch Hermes 3 — uncensored + native tool calling. THE agent model.', pulls: '500K+', tags: ['8B', 'Q4_K_M', '5 GB'], updated: 'Hot', agent: true, released: '2024-08', downloadUrl: HF('mradermacher/Hermes-3-Llama-3.1-8B-GGUF', 'Hermes-3-Llama-3.1-8B.Q4_K_M.gguf'), filename: 'Hermes-3-Llama-3.1-8B.Q4_K_M.gguf', sizeGB: 5 },
+    { name: 'Hermes 3 Llama 3.1 70B', description: 'NousResearch Hermes 3 70B — maximum intelligence, uncensored.', pulls: '500K+', tags: ['70B', 'Q4_K_M', '42 GB'], updated: 'Hot', agent: true, released: '2024-08', downloadUrl: HF('mradermacher/Hermes-3-Llama-3.1-70B-GGUF', 'Hermes-3-Llama-3.1-70B.Q4_K_M.gguf'), filename: 'Hermes-3-Llama-3.1-70B.Q4_K_M.gguf', sizeGB: 42 },
     // ── HOT: Dolphin 3 ──
     { name: 'Dolphin 3 Llama 3.1 8B', description: 'Dolphin 3 — uncensored from training. Coding, math, general purpose.', pulls: '3.7M', tags: ['8B', 'Q4_K_M', '5 GB'], updated: 'Hot', released: '2024-12', downloadUrl: HF('bartowski/dolphin-2.9.4-llama3.1-8b-GGUF', 'dolphin-2.9.4-llama3.1-8b-Q4_K_M.gguf'), filename: 'dolphin-2.9.4-llama3.1-8b-Q4_K_M.gguf', sizeGB: 5 },
     // ── HOT: Qwen 3.5 Abliterated ──

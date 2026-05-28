@@ -306,6 +306,19 @@ pub async fn pull_model_stream(app: tauri::AppHandle, state: tauri::State<'_, cr
     let mut buffer = String::new();
 
     let mut was_cancelled = false;
+    // Bug Z/a v2.5.0 — leonsk29 GH #48. We need to know whether the stream
+    // ever produced a terminal "success" line, OR whether it produced an
+    // `error` field. Ollama 0.4+ responds to a broken HF reference (e.g.
+    // bartowski/Hermes-3 GGUF on llama.cpp-incompatible builds) with HTTP
+    // 200 + a stream that ends after emitting `{"status":"pulling manifest"}`
+    // (no error field, no `success` line). Pre-v2.5.0 we treated that as
+    // success and the frontend flipped the badge to "Completed" despite no
+    // blob being written. Now we track the last status + watch for any
+    // `error` field, and surface a real error to the caller if neither
+    // success nor an explicit error came in.
+    let mut last_status: Option<String> = None;
+    let mut saw_success = false;
+    let mut error_msg: Option<String> = None;
 
     loop {
         tokio::select! {
@@ -321,6 +334,18 @@ pub async fn pull_model_stream(app: tauri::AppHandle, state: tauri::State<'_, cr
                             let line = buffer[..pos].trim().to_string();
                             buffer = buffer[pos + 1..].to_string();
                             if !line.is_empty() {
+                                // Bug Z/a — inspect each line for status/error fields
+                                if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&line) {
+                                    if let Some(err) = parsed.get("error").and_then(|v| v.as_str()) {
+                                        error_msg = Some(err.to_string());
+                                    }
+                                    if let Some(st) = parsed.get("status").and_then(|v| v.as_str()) {
+                                        last_status = Some(st.to_string());
+                                        if st == "success" {
+                                            saw_success = true;
+                                        }
+                                    }
+                                }
                                 // Emit with model name so frontend can route
                                 let payload = format!(r#"{{"model":"{}","data":{}}}"#, name, line);
                                 let _ = app.emit("pull-progress", &payload);
@@ -331,6 +356,7 @@ pub async fn pull_model_stream(app: tauri::AppHandle, state: tauri::State<'_, cr
                         let _ = app.emit("pull-progress", &format!(
                             r#"{{"model":"{}","data":{{"status":"Error: {}"}}}}"#, name, e
                         ));
+                        error_msg = Some(format!("network: {}", e));
                         break;
                     }
                     None => break, // Stream finished
@@ -343,6 +369,18 @@ pub async fn pull_model_stream(app: tauri::AppHandle, state: tauri::State<'_, cr
     if !was_cancelled {
         let remaining = buffer.trim().to_string();
         if !remaining.is_empty() {
+            // Same status/error inspection for the flushed tail
+            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&remaining) {
+                if let Some(err) = parsed.get("error").and_then(|v| v.as_str()) {
+                    error_msg = Some(err.to_string());
+                }
+                if let Some(st) = parsed.get("status").and_then(|v| v.as_str()) {
+                    last_status = Some(st.to_string());
+                    if st == "success" {
+                        saw_success = true;
+                    }
+                }
+            }
             let payload = format!(r#"{{"model":"{}","data":{}}}"#, name, remaining);
             let _ = app.emit("pull-progress", &payload);
         }
@@ -352,9 +390,22 @@ pub async fn pull_model_stream(app: tauri::AppHandle, state: tauri::State<'_, cr
     state.pull_tokens.lock().unwrap().remove(&name);
 
     if was_cancelled {
-        Err("cancelled".to_string())
-    } else {
+        return Err("cancelled".to_string());
+    }
+
+    // Bug Z/a v2.5.0 — only declare success if Ollama actually said so. If
+    // the stream ended without `{"status":"success"}` and without an
+    // explicit error field, surface the last status as the failure reason
+    // (e.g. "stream ended at: pulling manifest"). The frontend's catch
+    // will now show this to the user instead of silently flipping to
+    // "Completed".
+    if let Some(err) = error_msg {
+        Err(format!("ollama: {}", err))
+    } else if saw_success {
         Ok(())
+    } else {
+        let tail = last_status.unwrap_or_else(|| "no status received".to_string());
+        Err(format!("pull did not complete: stream ended at \"{}\". Repo may be incompatible with llama.cpp (try a different GGUF mirror).", tail))
     }
 }
 

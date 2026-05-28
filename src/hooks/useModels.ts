@@ -124,8 +124,19 @@ export function useModels() {
           try { await fetchModels() } catch { /* model list refresh failed — non-critical */ }
           // Auto-dismiss after 5s
           setTimeout(() => dismissPull(name), 5000)
-        } catch {
-          // Stream disconnected (pause or error) — card stays visible
+        } catch (err) {
+          // Bug Z/a v2.5.0 — leonsk29 GH #48. Pre-v2.5.0 this catch was
+          // silent ("card stays visible"), which combined with the Rust-
+          // side Ok(()) on stream-ended-without-success made LU flip the
+          // badge to "Completed" even when Ollama returned a 400 or the
+          // stream cut off after just the manifest. Now we surface the
+          // real error string as the card's last status, so the user can
+          // see *why* the pull failed (e.g. "Repo not GGUF compatible").
+          // The cancellation case is still distinguished from real errors.
+          const msg = (err as Error)?.message || String(err)
+          if (!/cancelled/i.test(msg) && controller.signal.aborted !== true) {
+            updatePullProgress(name, { status: `Failed: ${msg}` })
+          }
         }
         return
       }
