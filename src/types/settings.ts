@@ -43,6 +43,16 @@ export interface Settings {
   // providers ignore this field — they manage context themselves.
   /** User-side context-window override (forwarded as Ollama's num_ctx). 0 = auto. */
   contextWindowOverride: number
+  // Bug BB v2.5.0 — BobbyT Discord 2026-05-26. GPU vendor + indices to
+  // forward as CUDA_VISIBLE_DEVICES / HIP_VISIBLE_DEVICES /
+  // ONEAPI_DEVICE_SELECTOR on next Ollama / ComfyUI spawn. "auto" + empty
+  // = no env-var, runtime picks default (pre-v2.5.0 behaviour). Used on
+  // multi-vendor / multi-GPU systems (e.g. BobbyT's AMD RX 6800XT + Intel
+  // Arc Pro B60 where he wants to pin the Arc).
+  /** Selected GPU vendor for env-var family ("auto" | "nvidia" | "amd" | "intel"). */
+  gpuVendor: 'auto' | 'nvidia' | 'amd' | 'intel'
+  /** Zero-based, vendor-scoped indices of GPUs to expose. Empty = all. */
+  gpuIndices: number[]
   // ── v2.5.0 Codex sprint A/B/C settings (ported from uselu) ──────
   /**
    * Codex Architect/Editor split. When on, a separate `codexArchitectModel`

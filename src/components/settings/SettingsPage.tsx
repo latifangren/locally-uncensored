@@ -12,6 +12,7 @@ import { FEATURE_FLAGS } from '../../lib/constants'
 import { getRecommendedAgentModels } from '../../lib/model-compatibility'
 import { MemorySettings } from './MemorySettings'
 import { RemoteAccessSettings } from './RemoteAccessSettings'
+import { HardwareSettings } from './HardwareSettings'
 import { ProviderSettings } from './ProviderConfig'
 import { PermissionSettings } from './PermissionSettings'
 import { MCPServerSettings } from './MCPServerSettings'
@@ -749,6 +750,13 @@ export function SettingsPage() {
             <div className="text-[0.6rem] text-gray-500 dark:text-gray-500 leading-relaxed pt-0.5">
               0 = let Ollama decide (defaults to 2048). Set to e.g. 8192 or 16384 if RAG / long chats get clipped. Cloud providers ignore this.
             </div>
+          </Section>
+
+          {/* Bug BB v2.5.0 — BobbyT GPU picker. Lazy-loads the GPU list when
+              the section opens via detect_gpus probe (nvidia-smi + rocm-smi +
+              lspci/wmic). */}
+          <Section title="Hardware (GPU picker)">
+            <HardwareSettings />
           </Section>
 
           <Section title="Image / Video Generation Timeouts">

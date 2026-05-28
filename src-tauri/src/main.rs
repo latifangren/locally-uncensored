@@ -195,6 +195,10 @@ fn main() {
             commands::proxy::cancel_model_pull,
             // B7 (uselu Phase 4 inspiration) — one-shot diagnostic probe
             commands::health::system_health,
+            // Bug BB v2.5.0 — BobbyT GPU picker
+            commands::gpu::detect_gpus,
+            commands::gpu::set_gpu_selection,
+            commands::gpu::get_gpu_selection,
             // Codex / Sprint A #2 — Repo-Map with Aider PageRank
             commands::repo_map::repo_map,
             // Codex / Sprint C #7 — long-running background shell tasks

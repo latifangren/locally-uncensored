@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 
 use tokio_util::sync::CancellationToken;
 
+use crate::commands::gpu::GpuSelection;
 use crate::commands::whisper::WhisperServer;
 use crate::commands::remote::RemoteServer;
 use crate::python::get_python_bin;
@@ -174,6 +175,12 @@ pub struct AppState {
     /// a folder during Remote dispatch (#29 follow-up); cleared on
     /// undispatch / chat delete.
     pub chat_workspace_overrides: Arc<Mutex<HashMap<String, std::path::PathBuf>>>,
+    /// Bug BB v2.5.0 — BobbyT Discord 2026-05-26. User-pinned GPU vendor +
+    /// indices, forwarded as CUDA_VISIBLE_DEVICES / HIP_VISIBLE_DEVICES /
+    /// ONEAPI_DEVICE_SELECTOR on next start_ollama / start_comfyui spawn.
+    /// Default "auto" + empty indices = no env-var, runtime picks default
+    /// (pre-v2.5.0 behaviour).
+    pub gpu_selection: Mutex<GpuSelection>,
 }
 
 impl AppState {
@@ -230,6 +237,9 @@ impl AppState {
             // Remote Access
             remote: Mutex::new(RemoteServer::new()),
             chat_workspace_overrides: Arc::new(Mutex::new(HashMap::new())),
+            // Bug BB v2.5.0 — start in "auto" mode so existing installs are
+            // unchanged until the user explicitly picks a GPU in Settings.
+            gpu_selection: Mutex::new(GpuSelection::default()),
         }
     }
 }

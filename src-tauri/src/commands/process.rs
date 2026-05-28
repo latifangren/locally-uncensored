@@ -647,6 +647,13 @@ pub fn start_ollama(state: State<'_, AppState>) -> Result<serde_json::Value, Str
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
+    // Bug BB v2.5.0 — BobbyT. Forward the user's GPU pick as
+    // CUDA_VISIBLE_DEVICES / HIP_VISIBLE_DEVICES / ONEAPI_DEVICE_SELECTOR
+    // so Ollama uses the pinned card on multi-vendor / multi-GPU machines.
+    // No-op when the pick is "auto" (default).
+    if let Ok(sel) = state.gpu_selection.lock() {
+        crate::commands::gpu::apply_gpu_env(&mut cmd, &sel);
+    }
     #[cfg(target_os = "windows")]
     cmd.creation_flags(CREATE_NO_WINDOW);
     let result = cmd.spawn();
@@ -783,6 +790,13 @@ pub fn start_comfyui(state: State<'_, AppState>) -> Result<serde_json::Value, St
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    // Bug BB v2.5.0 — same GPU env forwarding as start_ollama. ComfyUI's
+    // backend (torch / DirectML / IPEX) reads these on import, so the pick
+    // takes effect on next spawn (current process must be restarted for a
+    // change to apply — surfaced as a hint in the Settings UI).
+    if let Ok(sel) = state.gpu_selection.lock() {
+        crate::commands::gpu::apply_gpu_env(&mut cmd, &sel);
+    }
     #[cfg(target_os = "windows")]
     cmd.creation_flags(CREATE_NO_WINDOW);
     let mut child = cmd.spawn()
