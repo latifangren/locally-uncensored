@@ -30,17 +30,21 @@ describe('fetchRepoMap', () => {
       limit: 50,
     })
     expect(backendCall).toHaveBeenCalledOnce()
+    // Payload MUST be wrapped in `{ args: … }` — the Rust `repo_map` command
+    // takes a single `args: Value` param. A flat payload is rejected at the
+    // bridge ("missing required key args"). Regression guard for the 2026-06-02
+    // fix that revived codexRepoMapEnabled.
     expect(backendCall.mock.calls[0]).toEqual([
       'repo_map',
-      { workingDirectory: '/Users/me/repo', query: 'auth', limit: 50 },
+      { args: { workingDirectory: '/Users/me/repo', query: 'auth', limit: 50 } },
     ])
   })
 
   it('defaults the limit to 20 when caller omits it', async () => {
     backendCall.mockResolvedValueOnce({ files: [], count: 0 })
     await fetchRepoMap({ workingDirectory: '/r' })
-    const args = backendCall.mock.calls[0][1] as Record<string, unknown>
-    expect(args.limit).toBe(20)
+    const payload = backendCall.mock.calls[0][1] as { args: Record<string, unknown> }
+    expect(payload.args.limit).toBe(20)
   })
 
   it('coerces a non-array files field into an empty array', async () => {

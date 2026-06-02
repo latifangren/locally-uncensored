@@ -23,23 +23,32 @@ export async function bgStart(input: {
   shell?: string
 }): Promise<{ id: string }> {
   if (!input.command?.trim()) throw new Error('command is required')
+  // The Rust bg_tasks commands take a SINGLE `args: serde_json::Value` param
+  // (manually deserialized into StartArgs/IdArgs) — unlike `shell_execute`,
+  // which uses flat params. So every payload MUST be wrapped in `{ args: … }`.
+  // Sending the fields top-level (as the flat convention does) makes Tauri
+  // reject the call with "missing required key args" — which silently broke
+  // shell_execute_background / shell_task_status / _kill / _list for every
+  // model (confirmed live 2026-06-02 via the Tauri bridge).
   return backendCall<{ id: string }>('shell_task_start', {
-    command: input.command,
-    cwd: input.cwd,
-    shell: input.shell,
+    args: {
+      command: input.command,
+      cwd: input.cwd,
+      shell: input.shell,
+    },
   })
 }
 
 export async function bgStatus(id: string): Promise<BgTaskStatus> {
-  return backendCall<BgTaskStatus>('shell_task_status', { id })
+  return backendCall<BgTaskStatus>('shell_task_status', { args: { id } })
 }
 
 export async function bgKill(id: string): Promise<{ ok: boolean; cancelled: boolean }> {
-  return backendCall<{ ok: boolean; cancelled: boolean }>('shell_task_kill', { id })
+  return backendCall<{ ok: boolean; cancelled: boolean }>('shell_task_kill', { args: { id } })
 }
 
 export async function bgList(): Promise<BgTaskListResult> {
-  return backendCall<BgTaskListResult>('shell_task_list', {})
+  return backendCall<BgTaskListResult>('shell_task_list', { args: {} })
 }
 
 /** Renders a status payload as a one-line summary for the model / UI. */

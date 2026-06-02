@@ -27,9 +27,13 @@ describe('bgStart', () => {
     backendCall.mockResolvedValueOnce({ id: 'abc' })
     await bgStart({ command: 'sleep 5', cwd: '/tmp', shell: 'bash' })
     expect(backendCall).toHaveBeenCalledOnce()
+    // Payload MUST be wrapped in `{ args: … }` — the Rust shell_task_start
+    // command takes a single `args: Value` param (StartArgs). A flat payload is
+    // rejected at the bridge ("missing required key args"). Regression guard for
+    // the 2026-06-02 fix that revived the background-shell tools.
     expect(backendCall.mock.calls[0]).toEqual([
       'shell_task_start',
-      { command: 'sleep 5', cwd: '/tmp', shell: 'bash' },
+      { args: { command: 'sleep 5', cwd: '/tmp', shell: 'bash' } },
     ])
   })
 })
@@ -49,7 +53,9 @@ describe('bgStatus / bgKill / bgList — JSON shape pass-through', () => {
     }
     backendCall.mockResolvedValueOnce(payload)
     expect(await bgStatus('abc')).toEqual(payload)
-    expect(backendCall.mock.calls[0]).toEqual(['shell_task_status', { id: 'abc' }])
+    // Wrapped in `{ args: … }` — shell_task_status takes a single `args: Value`
+    // (IdArgs). Flat `{ id }` is rejected by the bridge.
+    expect(backendCall.mock.calls[0]).toEqual(['shell_task_status', { args: { id: 'abc' } }])
   })
 
   it('bgKill returns the cancelled flag', async () => {

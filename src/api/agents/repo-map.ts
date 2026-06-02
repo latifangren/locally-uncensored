@@ -27,10 +27,18 @@ export async function fetchRepoMap(input: FetchRepoMapInput): Promise<RepoMapRes
   if (!input.workingDirectory) {
     return { files: [], count: 0 }
   }
+  // The Rust `repo_map` command takes a SINGLE `args: serde_json::Value` param
+  // (deserialized into RepoMapArgs) — so the payload MUST be wrapped in
+  // `{ args: … }`. Sending the fields top-level makes Tauri reject the call
+  // with "missing required key args", which silently disabled the whole
+  // codexRepoMapEnabled pre-fetch (the failure is swallowed by a try/catch in
+  // useCodex → log.warn → no repo map). Confirmed live 2026-06-02.
   const out = await backendCall<RepoMapResult>('repo_map', {
-    workingDirectory: input.workingDirectory,
-    query: input.query,
-    limit: input.limit ?? 20,
+    args: {
+      workingDirectory: input.workingDirectory,
+      query: input.query,
+      limit: input.limit ?? 20,
+    },
   })
   return {
     files: Array.isArray(out.files) ? out.files : [],
