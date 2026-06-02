@@ -193,6 +193,38 @@ body {
   background: transparent;
 }
 
+/* Global scrollbar (David 2026-06-02): every scrollable surface — not only
+   .scrollbar-thin containers — gets the themed scrollbar so the bare white
+   Windows/WebView2 default never shows (it was visible on the coding file-tree
+   and other panes). .scrollbar-thin above still wins for the slim 6px variant. */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.18);
+  border-radius: 5px;
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-violet-500);
+}
+::-webkit-scrollbar-button,
+::-webkit-scrollbar-button:start,
+::-webkit-scrollbar-button:end {
+  display: none;
+  width: 0;
+  height: 0;
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 /* Range slider */
 input[type="range"] {
   -webkit-appearance: none;

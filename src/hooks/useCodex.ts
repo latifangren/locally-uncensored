@@ -794,8 +794,20 @@ export function useCodex() {
         // (only strong "is complete / all tests pass / committed" phrases, not
         // forward-looking "to complete the fix") so we err toward nudging.
         if (toolCalls.length === 0) {
-          const looksComplete = /\b(the (task|fix|change|work) is (now )?complete|task complete|all (the )?tests?(?: now)? pass(ed)?|i (?:have|'ve) (?:committed|fixed and committed)|successfully committed|committed the (?:fix|change|changes)|no (?:further|more) (?:changes|steps|action)s? (?:are )?(?:needed|required)|nothing (?:else|more) to do)\b/i.test(turnContent)
-          if (!looksComplete && continueNudgesRemaining > 0) {
+          // Nudge ONLY when the model clearly STALLED mid-task — it narrated the
+          // next step ("I'm about to…", "let me…", "next I'll…", "I need to read…")
+          // or asked for info it could find itself ("please provide the path",
+          // "which file?"), or returned no text at all. A substantive ANSWER
+          // matches none of these, so simple Q&A ("2+2 is 4" / "Task completed.
+          // The answer is 4.") stops cleanly. The previous "nudge unless a
+          // completion keyword is present" version looped on already-answered
+          // questions (David 2026-06-02: coding agent "antwortet in loops" on a
+          // simple question — it called shell_execute 3× + repeated "Task
+          // completed" because "completed" never matched the completion regex).
+          const stalledNarration = /\b(i'?m about to|i will(?: now)?|i'?ll\b|let me\b|next,?\s*i\b|now i'?ll|going to|first,?\s*i\b|then i'?ll|i need to (?:read|open|check|look|run|see|find))\b/i.test(turnContent)
+          const asksForInfo = /\b(please provide|could you (?:please )?(?:provide|share|tell|give|specify)|what(?:'s| is) the (?:path|file|name|location)|which file|can you (?:provide|share|specify|tell)|provide (?:the|me) (?:the )?(?:path|file|details|more)|need (?:the|more) (?:path|info|details|context))\b/i.test(turnContent)
+          const emptyTurn = turnContent.trim().length === 0
+          if ((stalledNarration || asksForInfo || emptyTurn) && continueNudgesRemaining > 0) {
             continueNudgesRemaining--
             void diagLog('continue-nudge', { iter: i, remaining: continueNudgesRemaining, turnContentLen: turnContent.length })
             messages.push({
