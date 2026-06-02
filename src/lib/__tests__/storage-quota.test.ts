@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { createJSONStorage } from 'zustand/middleware'
 import { getStorageUsage, createSafeStorage } from '../storage-quota'
 
 // Mock localStorage for tests
@@ -395,6 +396,32 @@ describe('storage-quota', () => {
       // The stale newest entry is the one dropped to get to 500.
       expect(pruned.state.entries.length).toBe(500)
       expect(ids).not.toContain('m-0')
+    })
+
+    // ─── REGRESSION (FIX-3): the storage MUST be JSON-wrapped for zustand v5 ───
+    // The stores configure `storage: createJSONStorage(() => createSafeStorage())`.
+    // Earlier they passed the raw StateStorage, so zustand v5 handed the
+    // {state,version} OBJECT to setItem → localStorage.setItem(name, object) →
+    // "[object Object]" → chat-conversations + memory never hydrated → wiped on
+    // every restart. This asserts the wrapped shape the stores use round-trips an
+    // object to VALID JSON (and back), which the raw form cannot.
+    it('createJSONStorage(() => createSafeStorage()) round-trips an object as valid JSON (not "[object Object]")', () => {
+      const mock = createMockStorage({})
+      Object.defineProperty(globalThis, 'localStorage', {
+        value: mock, writable: true, configurable: true,
+      })
+      const wrapped = createJSONStorage(() => createSafeStorage())!
+      const value = { state: { conversations: [{ id: 'c1', title: 'hi' }] }, version: 0 }
+      wrapped.setItem('chat-conversations', value as any)
+
+      const raw = globalThis.localStorage.getItem('chat-conversations')
+      expect(raw).not.toBe('[object Object]')
+      // Must be parseable JSON — the bug stored "[object Object]" which throws here.
+      const parsed = JSON.parse(raw as string)
+      expect(parsed.state.conversations[0].id).toBe('c1')
+      // And getItem hydrates back to the original object (what zustand needs).
+      const readBack = wrapped.getItem('chat-conversations') as any
+      expect(readBack?.state?.conversations?.[0]?.title).toBe('hi')
     })
 
     it('dispatches lu:storage-quota-exceeded once when pruning cannot free space', () => {

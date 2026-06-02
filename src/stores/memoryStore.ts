@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
+import { persist, createJSONStorage } from 'zustand/middleware'
 import { v4 as uuid } from 'uuid'
 import type { MemoryEntry, MemoryCategory, MemoryFile, MemoryType, MemorySettings } from '../types/agent-mode'
 import { MEMORY_MIGRATION_MAP, MEMORY_BUDGET_TIERS } from '../types/agent-mode'
@@ -674,7 +674,11 @@ export const useMemoryStore = create<MemoryState>()(
       // bump exists only to run migrateV2toV3 so the shape is explicit and
       // future migrations have a clean baseline.
       version: 3,
-      storage: createSafeStorage(),
+      // zustand v5: wrap the STRING-based createSafeStorage in createJSONStorage,
+      // else zustand passes the {state,version} object to setItem → "[object Object]"
+      // → memories never hydrate and are wiped on restart (v2.5.0 regression). Same
+      // root cause + fix as chatStore.
+      storage: createJSONStorage(() => createSafeStorage()),
       migrate: (persistedState, version) => {
         let state: any = persistedState
         if (version < 2) {
