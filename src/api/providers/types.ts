@@ -172,13 +172,32 @@ export interface ProviderClient {
 // ── Provider Error ────────────────────────────────────────────
 
 export class ProviderError extends Error {
+  // Explicit fields (not constructor parameter-properties): the build runs
+  // under `erasableSyntaxOnly`, which forbids TS parameter-properties.
+  readonly provider: ProviderId
+  /** 'auth' | 'rate_limit' | 'not_found' | 'network' | 'ollama_missing_blob' | 'ollama_stale_manifest' */
+  readonly code?: string
+  readonly status?: number
+  /**
+   * Provider-specific extra context. Used by UI catch sites to update the
+   * model-health store (Ollama missing-blob / stale-manifest) without importing
+   * zustand from inside the provider — keeps the API layer decoupled from app
+   * state. See lib/sync-ollama-health.ts.
+   */
+  readonly model?: string
+
   constructor(
     message: string,
-    public readonly provider: ProviderId,
-    public readonly code?: string,     // 'auth', 'rate_limit', 'not_found', 'network'
-    public readonly status?: number,
+    provider: ProviderId,
+    code?: string,
+    status?: number,
+    model?: string,
   ) {
     super(message)
     this.name = 'ProviderError'
+    this.provider = provider
+    this.code = code
+    this.status = status
+    this.model = model
   }
 }

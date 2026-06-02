@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import {
   DELEGATE_TASK_TOOL_DEF,
-  SUB_AGENT_MAX_DEPTH,
+  SUB_AGENT_MAX_PARALLEL,
   SUB_AGENT_BUDGET,
   buildDelegateExecutor,
   _getDepth,
@@ -16,8 +16,9 @@ describe('sub-agent — tool definition', () => {
     expect(DELEGATE_TASK_TOOL_DEF.inputSchema.required).toContain('goal')
   })
 
-  it('description contains the nesting warning', () => {
-    expect(DELEGATE_TASK_TOOL_DEF.description).toMatch(/nesting depth is 2/i)
+  it('description contains the recursion + parallel hints', () => {
+    expect(DELEGATE_TASK_TOOL_DEF.description).toMatch(/recursion is filtered/i)
+    expect(DELEGATE_TASK_TOOL_DEF.description).toMatch(/PARALLELIZE/i)
   })
 })
 
@@ -72,42 +73,76 @@ describe('sub-agent — buildDelegateExecutor', () => {
     expect(_getDepth()).toBe(0)
   })
 
-  it('refuses once MAX_DEPTH is reached', async () => {
-    _setDepth(SUB_AGENT_MAX_DEPTH)
+  it('refuses once MAX_PARALLEL in-flight is reached', async () => {
+    _setDepth(SUB_AGENT_MAX_PARALLEL)
     const runner = vi.fn(async () => 'should not run')
     const exec = buildDelegateExecutor(runner)
     const out = await exec({ goal: 'x' })
-    expect(out).toMatch(/Maximum sub-agent nesting depth/)
+    expect(out).toMatch(/Maximum sub-agent concurrency/)
     expect(runner).not.toHaveBeenCalled()
     // And the tracker is not nudged by a refused call.
-    expect(_getDepth()).toBe(SUB_AGENT_MAX_DEPTH)
+    expect(_getDepth()).toBe(SUB_AGENT_MAX_PARALLEL)
   })
 
-  it('allows a call at depth = MAX_DEPTH - 1 (recursive boundary)', async () => {
-    _setDepth(SUB_AGENT_MAX_DEPTH - 1)
+  it('allows a call at MAX_PARALLEL - 1 (boundary)', async () => {
+    _setDepth(SUB_AGENT_MAX_PARALLEL - 1)
     const runner = vi.fn(async () => 'ok')
     const exec = buildDelegateExecutor(runner)
     const out = await exec({ goal: 'x' })
     expect(out).toBe('ok')
-    expect(_getDepth()).toBe(SUB_AGENT_MAX_DEPTH - 1)
+    expect(_getDepth()).toBe(SUB_AGENT_MAX_PARALLEL - 1)
   })
 
-  it('serialises concurrent calls via shared depth counter (approximate)', async () => {
-    // Two simultaneous executors, each with its own goal. Both increment
-    // _depth on the way in; neither should see > 2 depth even when
-    // interleaved, because _depth is incremented synchronously before
-    // the async runner awaits.
+  // ── Parallel siblings (Bonus, 2026-05) ─────────────────────────
+
+  it('runs three parallel siblings concurrently — no false refusals', async () => {
     let observedMax = 0
-    const runner = async () => {
+    const starts: number[] = []
+    const runner = async (goal: string) => {
+      starts.push(Date.now())
       observedMax = Math.max(observedMax, _getDepth())
-      await new Promise((r) => setTimeout(r, 5))
-      return 'done'
+      await new Promise((r) => setTimeout(r, 10))
+      return `done:${goal}`
     }
     const exec = buildDelegateExecutor(runner)
-    await Promise.all([exec({ goal: 'a' }), exec({ goal: 'b' })])
-    // Two concurrent calls both pass the guard at depth 0 and 1, so the
-    // observed max is SUB_AGENT_MAX_DEPTH. A THIRD concurrent call would
-    // be refused before the runner fires.
-    expect(observedMax).toBeLessThanOrEqual(SUB_AGENT_MAX_DEPTH)
+    const out = await Promise.all([
+      exec({ goal: 'a' }),
+      exec({ goal: 'b' }),
+      exec({ goal: 'c' }),
+    ])
+    expect(out).toEqual(['done:a', 'done:b', 'done:c'])
+    // All three should be in flight at the same time → observedMax = 3.
+    expect(observedMax).toBe(3)
+    // And every refusal would have been "should not run" — none returned.
+    expect(out.every((s) => !s.startsWith('Error'))).toBe(true)
+  })
+
+  it('a 5th parallel sibling is refused (cap is 4)', async () => {
+    _setDepth(0)
+    const runner = vi.fn(async () => {
+      await new Promise((r) => setTimeout(r, 20))
+      return 'ok'
+    })
+    const exec = buildDelegateExecutor(runner)
+    const five = [
+      exec({ goal: 'a' }),
+      exec({ goal: 'b' }),
+      exec({ goal: 'c' }),
+      exec({ goal: 'd' }),
+      exec({ goal: 'e' }),
+    ]
+    const settled = await Promise.all(five)
+    const refused = settled.filter((s) => /Maximum sub-agent concurrency/.test(s))
+    expect(refused).toHaveLength(1)
+    expect(runner).toHaveBeenCalledTimes(4)
+  })
+
+  it('after a refusal, the next call succeeds once a slot frees', async () => {
+    _setDepth(SUB_AGENT_MAX_PARALLEL)
+    const runner = vi.fn(async () => 'ok')
+    const exec = buildDelegateExecutor(runner)
+    expect(await exec({ goal: 'x' })).toMatch(/Maximum sub-agent concurrency/)
+    _setDepth(0)
+    expect(await exec({ goal: 'x' })).toBe('ok')
   })
 })

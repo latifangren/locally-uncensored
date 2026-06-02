@@ -12,10 +12,12 @@ export function FileTree() {
   const setFileTree = useCodexStore((s) => s.setFileTree)
   const setWorkingDirectory = useCodexStore((s) => s.setWorkingDirectory)
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const loadDirectory = async (dir: string) => {
     if (!dir.trim()) return
     setLoading(true)
+    setError(null)
     try {
       const result = await toolRegistry.execute('file_list', { path: dir })
       const lines = result.split('\n').filter(Boolean)
@@ -30,8 +32,9 @@ export function FileTree() {
 
       setFileTree(nodes)
       setWorkingDirectory(dir)
-    } catch {
+    } catch (e) {
       setFileTree([])
+      setError(e instanceof Error ? e.message : 'Failed to read directory')
     } finally {
       setLoading(false)
     }
@@ -111,6 +114,8 @@ export function FileTree() {
       <div className="flex-1 overflow-y-auto scrollbar-thin p-1">
         {loading ? (
           <p className="text-[0.5rem] text-gray-400 dark:text-gray-600 px-1 py-2">Loading...</p>
+        ) : error ? (
+          <p className="text-[0.5rem] text-red-500/80 px-1 py-2">{error}</p>
         ) : fileTree.length === 0 ? (
           <p className="text-[0.5rem] text-gray-400 dark:text-gray-600 px-1 py-2">
             {workingDirectory ? 'Empty directory' : 'Click above to set a folder'}

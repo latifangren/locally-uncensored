@@ -13,6 +13,7 @@ import { useAgentChat } from "./useAgentChat"
 import { useMemory } from "./useMemory"
 import { useAgentModeStore } from "../stores/agentModeStore"
 import { getProviderForModel, getProviderIdFromModel } from "../api/providers"
+import { syncOllamaHealthFromError } from "../lib/sync-ollama-health"
 import { isThinkingCompatible, isPlainTextPlanner } from "../lib/model-compatibility"
 import { stripNonCanonicalTags, finalStripThinkingTags } from "../lib/thinking-stripper"
 import type { ChatStreamChunk } from "../api/providers/types"
@@ -315,6 +316,12 @@ export function useChat() {
       }
     } catch (err) {
       if ((err as Error).name !== "AbortError") {
+        // Bug C — translate Ollama provider errors into health-store
+        // updates so the header chip + top banner light up reactively.
+        // Helper-extracted so additional catch sites (useABCompare etc.)
+        // can call the same translation without re-implementing it.
+        syncOllamaHealthFromError(err)
+
         const errorMsg = (err as any).code === 'auth'
           ? (err as Error).message
           : (err as any).code === 'rate_limit'

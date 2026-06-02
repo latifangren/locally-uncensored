@@ -1,6 +1,7 @@
 import { Terminal, FileEdit, Brain, AlertCircle, CheckCircle, ChevronDown } from 'lucide-react'
 import { useState } from 'react'
 import type { CodexEvent } from '../../types/codex'
+import { DiffView } from './DiffView'
 
 interface Props {
   event: CodexEvent
@@ -35,6 +36,7 @@ export function CodexEventBlock({ event }: Props) {
   const Icon = icons[event.type as keyof typeof icons] || CheckCircle
   const color = colors[event.type as keyof typeof colors] || 'text-gray-400'
   const label = labels[event.type as keyof typeof labels] || event.type
+  const hasDiff = event.type === 'file_change' && Boolean(event.diff)
 
   return (
     <div className="mb-0.5">
@@ -49,17 +51,21 @@ export function CodexEventBlock({ event }: Props) {
 
       {open && (
         <div className="pl-4 pb-1">
-          <pre className={`text-[0.58rem] leading-relaxed rounded px-2 py-1 overflow-auto scrollbar-thin max-h-[250px] ${
-            event.type === 'terminal_output'
-              ? 'bg-black/20 text-green-300/70'
-              : event.type === 'error'
-                ? 'bg-red-500/5 text-red-400/80'
-                : event.type === 'reasoning'
-                  ? 'text-blue-200/40 italic'
-                  : 'bg-white/[0.02] text-gray-400'
-          }`}>
-            {event.content}
-          </pre>
+          {hasDiff ? (
+            <DiffView diff={event.diff!} />
+          ) : (
+            <pre className={`text-[0.58rem] leading-relaxed rounded px-2 py-1 overflow-auto scrollbar-thin max-h-[250px] ${
+              event.type === 'terminal_output'
+                ? 'bg-black/20 text-green-300/70'
+                : event.type === 'error'
+                  ? 'bg-red-500/5 text-red-400/80'
+                  : event.type === 'reasoning'
+                    ? 'text-blue-200/40 italic'
+                    : 'bg-white/[0.02] text-gray-400'
+            }`}>
+              {event.content}
+            </pre>
+          )}
         </div>
       )}
     </div>

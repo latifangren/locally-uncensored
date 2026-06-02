@@ -102,7 +102,19 @@ class ComfyWSClient {
           clearTimeout(timer)
           this._connected = false
           this.connectPromise = null
-          // onclose will fire after onerror
+          // CRITICAL: reject so callers don't hang. A WS error fires onerror
+          // and we clear the connect timeout above — if we don't reject here,
+          // the connect() promise NEVER settles and `await comfyWS.connect()`
+          // hangs forever. That's exactly what happened when ComfyUI was
+          // started without `--enable-cors-header` (e.g. a user-run / external
+          // ComfyUI, or the dev auto-starter): ComfyUI's origin-only CSRF
+          // middleware rejects the WebView's cross-origin upgrade, the WS
+          // errors, and image/video generation got stuck on "Submitting to
+          // ComfyUI…" with no progress and no result. Rejecting lets useCreate
+          // fall back to /history polling so the result still appears (it only
+          // loses the live progress bar). onclose still fires after this and
+          // schedules a reconnect; reject on a settled promise is a no-op.
+          reject(new Error('WebSocket connection error'))
         }
       } catch {
         clearTimeout(timer)

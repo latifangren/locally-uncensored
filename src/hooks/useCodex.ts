@@ -47,6 +47,19 @@ function diagLog(_tag: string, _data: unknown): void {
   /* release: no-op */
 }
 
+// Review-mode system prompt (B13). In review mode this REPLACES the base
+// CODEX_SYSTEM_PROMPT entirely — the autonomy/build contract is the wrong
+// framing for a read-only reviewer and would fight the executor gate. The
+// list-stripping below (REVIEW_MODE_FORBIDDEN_TOOLS) still enforces
+// read-only programmatically even if the model tries a write tool anyway.
+const CODEX_REVIEW_SYSTEM_PROMPT = `You are Codex in REVIEW MODE — a read-only code reviewer inside Locally Uncensored. You DO NOT modify any files, run any commands, or change any state. Your job is to read code with file_read / file_list / file_search / git_diff / git_log and return INLINE COMMENTS only.
+
+REVIEW MODE CONTRACT (binding):
+- You MAY call: file_read, file_list, file_search, git_status, git_log, git_diff, system_info, process_list, get_current_time, web_fetch, web_search.
+- You MUST NOT call: file_write, shell_execute, code_execute, run_tests, git_commit, git_push, gh_pr_create, image_generate, run_workflow, screenshot, delegate_task. If you call them, the harness will reject the call and tell the model "review-only mode" — wasted budget.
+- Output format: a markdown report with sections "## Summary", "## Findings (priority order)", "## Suggested follow-ups". For each finding cite the file + line range (path:line or path:start-end).
+- Be direct. No flattery, no boilerplate. If the code is fine, say so in one sentence and stop.`
+
 const CODEX_SYSTEM_PROMPT = `You are Codex, an autonomous coding agent inside Locally Uncensored. You execute coding tasks end-to-end by reading files, writing code, and running shell commands. You MUST use tools — never guess file contents.
 
 AUTONOMY CONTRACT (read carefully):
@@ -99,6 +112,10 @@ const REVIEW_MODE_FORBIDDEN_TOOLS = new Set([
   'run_tests',
   'image_generate',
   'run_workflow',
+  // Parity with uselu's review blocklist — a reviewer must not capture the
+  // screen or hand work off to a sub-agent that could mutate state.
+  'screenshot',
+  'delegate_task',
 ])
 
 // `.lurules` reader — backendCall wraps the desktop Tauri `file_read`
@@ -233,8 +250,14 @@ export function useCodex() {
     // Build permissions — auto-approve reads, confirm writes
     const permissions = usePermissionStore.getState().getEffectivePermissions(convId)
 
-    // System prompt with working directory
-    let systemPrompt = `${CODEX_SYSTEM_PROMPT}\n\nWorking directory: ${workDir}`
+    // System prompt with working directory. Review mode swaps the base
+    // prompt to lock the model into read-only behaviour — the
+    // list-stripping below (REVIEW_MODE_FORBIDDEN_TOOLS) still enforces it
+    // programmatically even if the model tries to call a write tool anyway.
+    const reviewMode = settings.codexReviewMode === true
+    let systemPrompt = reviewMode
+      ? `${CODEX_REVIEW_SYSTEM_PROMPT}\n\nWorking directory: ${workDir}`
+      : `${CODEX_SYSTEM_PROMPT}\n\nWorking directory: ${workDir}`
 
     // Memory injection — parity with Chat + Agent. Codex was the only
     // surface that ignored the memory system; now it sees remembered
@@ -274,16 +297,11 @@ export function useCodex() {
       systemPrompt += '\n\nBefore answering, reason through your thinking inside <think></think> tags. Your thinking will be hidden from the user. After thinking, provide your answer outside the tags.'
     }
 
-    // Code-Review Mode banner (B13). Tells the model up front that it
-    // is in review-only mode so it doesn't try to call write tools that
-    // the filter below would just strip — saving an iteration where the
-    // model would otherwise discover the missing tool by tool-error.
-    if (settings.codexReviewMode) {
-      systemPrompt += `\n\nCODE-REVIEW MODE (active):
-- You have READ-ONLY access. Do NOT call file_write, shell_execute, code_execute, git_commit, git_push, project_init, gh_pr_create, run_tests, image_generate, or run_workflow.
-- Inspect the codebase using file_read, file_list, file_search, git_status, git_log, git_diff, pr_resume.
-- Deliver your review as inline comments and a final summary. Reference files and line numbers explicitly. Suggest changes in prose — do not apply them.`
-    }
+    // Code-Review Mode (B13) — the dedicated CODEX_REVIEW_SYSTEM_PROMPT
+    // above already replaced the base prompt with the read-only contract,
+    // so no extra banner append is needed here. The list-stripping in the
+    // tool-build path (REVIEW_MODE_FORBIDDEN_TOOLS) remains the
+    // belt-and-braces programmatic guard.
 
     // Caveman mode: append as response style modifier after Codex instructions
     if (settings.cavemanMode && settings.cavemanMode !== 'off') {
@@ -728,6 +746,17 @@ export function useCodex() {
         if (turnContent) {
           fullContent += (fullContent ? '\n\n' : '') + turnContent
           useChatStore.getState().updateMessageContent(convId, assistantMsg.id, fullContent)
+          // Interleaving (2026-05) — also push the iteration's text as an
+          // 'answer' block so the renderer can put it BETWEEN the previous
+          // and next tool calls instead of stacking every step's commentary
+          // at the bottom. The fullContent path stays as the persisted
+          // history payload for back-compat with older chats.
+          addBlock({
+            id: uuid(),
+            phase: 'answer',
+            content: turnContent,
+            timestamp: Date.now(),
+          })
         }
 
         // No tool calls → done
@@ -812,6 +841,26 @@ export function useCodex() {
           args: e.injectedArgs,
         }))
         const auditIds = new Map<string, string>()
+
+        // Pre-read the on-disk version of every file_write target so we can
+        // emit a unified diff alongside the file_change event regardless of
+        // stage mode. Missing files become an empty old version (the diff
+        // renders as a pure insert). Errors are swallowed — a failing
+        // pre-read just means the file_change event won't carry a diff,
+        // never blocks the write.
+        const oldContents = new Map<string, string>()
+        await Promise.all(
+          batch
+            .filter((e) => e.ac.toolName === 'file_write' && typeof e.injectedArgs.path === 'string')
+            .map(async (e) => {
+              try {
+                const r = await backendCall<{ content?: string }>('file_read', { path: e.injectedArgs.path })
+                oldContents.set(e.ac.id, r?.content ?? '')
+              } catch {
+                oldContents.set(e.ac.id, '')
+              }
+            }),
+        )
 
         // 60 s per-call timeout is enforced by wrapping the executor function
         // (keeps the original safety guard — a runaway tool cannot wedge the
@@ -926,9 +975,24 @@ export function useCodex() {
               id: uuid(), type: 'terminal_output', content: resultStr, timestamp: Date.now(),
             })
           } else if (entry.ac.toolName === 'file_write') {
+            // Attach a unified diff to EVERY file_change event (not only in
+            // stage mode). Pre-read above captured the on-disk version; a
+            // missing file yields an all-add hunk. Empty diff → omit.
+            const oldText = oldContents.get(entry.ac.id) ?? ''
+            const newText =
+              typeof entry.injectedArgs.content === 'string'
+                ? entry.injectedArgs.content
+                : ''
+            const diff = computeUnifiedDiff(
+              entry.injectedArgs.path,
+              oldText,
+              newText,
+            )
             codexStore.addEvent(convId, {
               id: uuid(), type: 'file_change', content: resultStr,
-              filePath: entry.injectedArgs.path, timestamp: Date.now(),
+              filePath: entry.injectedArgs.path,
+              diff: diff || undefined,
+              timestamp: Date.now(),
             })
           } else if (isError) {
             codexStore.addEvent(convId, {

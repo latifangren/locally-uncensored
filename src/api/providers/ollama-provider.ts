@@ -132,10 +132,7 @@ export class OllamaProvider implements ProviderClient {
     }
 
     if (!res.ok) {
-      throw new ProviderError(
-        await this.extractError(res, 'Chat failed', model),
-        'ollama', 'network', res.status,
-      )
+      throw await this.buildError(res, 'Chat failed', model)
     }
 
     for await (const chunk of parseNDJSONStream<OllamaChatChunk>(res)) {
@@ -212,10 +209,7 @@ export class OllamaProvider implements ProviderClient {
     }
 
     if (!res.ok) {
-      throw new ProviderError(
-        await this.extractError(res, 'Tool calling failed', model),
-        'ollama', 'network', res.status,
-      )
+      throw await this.buildError(res, 'Tool calling failed', model)
     }
 
     const data = await res.json()
@@ -311,18 +305,43 @@ export class OllamaProvider implements ProviderClient {
 
   // ── Helpers ────────────────────────────────────────────────
 
-  private async extractError(res: Response, fallback: string, model?: string): Promise<string> {
+  /**
+   * Classify a non-ok Ollama response and wrap it in `ProviderError`. The
+   * resulting error carries:
+   *   - `code` — one of `ollama_missing_blob`, `ollama_stale_manifest`,
+   *     or generic `network` so UI catch sites can branch (and feed the
+   *     model-health store via lib/sync-ollama-health.ts) without
+   *     re-parsing the message.
+   *   - `model` — threaded through from chatStream/chatWithTools so the
+   *     UI can name the affected model in a one-click "ollama pull <model>"
+   *     repair flow. Missing-blob errors only carry the on-disk blob hash,
+   *     not the model name, so we pass `model` into parseOllamaError as the
+   *     fallback (Bug C) — that populates `parsed.model`, which
+   *     chatStyleMessage then uses for the user-facing wording.
+   *
+   * Pure function: no store side-effects, no UI imports. The caller
+   * (useChat via syncOllamaHealthFromError) translates the error code into
+   * a store update.
+   *
+   * Shares the detection logic with loadModel / unloadModel via
+   * ollama-errors. The regex there matches chat, completion, AND generate
+   * (the Lichtschalter path uses /api/generate with an empty prompt for
+   * preload — same error class).
+   */
+  private async buildError(res: Response, fallback: string, model?: string): Promise<ProviderError> {
+    const status = res.status
     try {
-      // Share the detection logic with loadModel / unloadModel via ollama-errors.
-      // The regex there matches chat, completion, AND generate (the Lichtschalter
-      // path uses /api/generate with an empty prompt for preload — same error class).
-      // Bug C: thread the request's `model` arg through so missing-blob errors,
-      // which only carry the on-disk blob hash, can name the model in the UI.
       const { parseOllamaError, chatStyleMessage } = await import('../../lib/ollama-errors')
       const parsed = await parseOllamaError(res, fallback, model)
-      return chatStyleMessage(parsed)
+      const message = chatStyleMessage(parsed)
+      let code = 'network'
+      if (parsed.kind === 'missing-blob') code = 'ollama_missing_blob'
+      else if (parsed.kind === 'stale-manifest') code = 'ollama_stale_manifest'
+      // Prefer the parsed model name (e.g. from a stale-manifest string that
+      // carries it) and fall back to the request's model arg.
+      return new ProviderError(message, 'ollama', code, status, parsed.model || model)
     } catch {
-      return fallback
+      return new ProviderError(fallback, 'ollama', 'network', status, model)
     }
   }
 }

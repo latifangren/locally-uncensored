@@ -133,21 +133,71 @@ export function CodexView() {
                             ))}
                         </div>
                       )}
-                      {/* Tool call blocks */}
-                      {msg.role === 'assistant' && msg.agentBlocks && msg.agentBlocks.length > 0 && (
-                        <div className="space-y-0">
-                          {msg.agentBlocks
-                            .filter(b => b.phase === 'tool_call' && b.toolCall)
-                            .map(block => (
-                              <ToolCallBlock key={block.id} toolCall={block.toolCall!} />
-                            ))}
-                        </div>
-                      )}
+                      {/* Interleaved blocks (Codex 2026-05) — when the
+                          assistant turn produced per-iteration 'answer'
+                          blocks, render tool_call + answer blocks in
+                          chronological order so commentary sits BETWEEN tool
+                          calls instead of all text bunching at the bottom.
+                          Falls back to the legacy split (tool-calls only,
+                          full text below) for older chats that have only
+                          tool_call blocks. */}
+                      {msg.role === 'assistant' && msg.agentBlocks && msg.agentBlocks.length > 0
+                        ? (() => {
+                            const hasAnswerBlock = msg.agentBlocks!.some(
+                              (b) => b.phase === 'answer' && b.content.trim(),
+                            )
+                            if (hasAnswerBlock) {
+                              return (
+                                <div className="space-y-1">
+                                  {[...msg.agentBlocks!]
+                                    .filter(
+                                      (b) =>
+                                        (b.phase === 'tool_call' && b.toolCall) ||
+                                        (b.phase === 'answer' && b.content.trim()),
+                                    )
+                                    .sort((a, b) => a.timestamp - b.timestamp)
+                                    .map((block) => {
+                                      if (block.phase === 'tool_call' && block.toolCall) {
+                                        return (
+                                          <ToolCallBlock key={block.id} toolCall={block.toolCall} />
+                                        )
+                                      }
+                                      if (block.phase === 'answer' && block.content.trim()) {
+                                        return (
+                                          <div key={block.id} className="px-1 py-0.5">
+                                            <div className="text-[0.75rem] leading-relaxed">
+                                              <MarkdownRenderer
+                                                content={stripChannelTags(block.content)}
+                                              />
+                                            </div>
+                                          </div>
+                                        )
+                                      }
+                                      return null
+                                    })}
+                                </div>
+                              )
+                            }
+                            return (
+                              <div className="space-y-0">
+                                {msg.agentBlocks!
+                                  .filter((b) => b.phase === 'tool_call' && b.toolCall)
+                                  .map((block) => (
+                                    <ToolCallBlock key={block.id} toolCall={block.toolCall!} />
+                                  ))}
+                              </div>
+                            )
+                          })()
+                        : null}
 
-                      {/* Text content — assistant drops the bubble entirely
-                          to match the regular Chat view (per user feedback).
-                          User keeps theirs as the right-aligned anchor. */}
-                      {cleanContent && (
+                      {/* Text content — user bubble always; assistant only
+                          when there are no per-iteration answer blocks (the
+                          interleave path above already rendered them inline).
+                          Assistant drops the bubble entirely to match the
+                          regular Chat view; user keeps theirs as the
+                          right-aligned anchor. */}
+                      {cleanContent && (msg.role === 'user' ||
+                        !(msg.agentBlocks && msg.agentBlocks.some((b) => b.phase === 'answer' && b.content.trim()))) && (
                         <div className={
                           msg.role === 'user'
                             ? 'rounded-lg px-2.5 py-1.5 bg-gray-100 dark:bg-white/[0.06] border border-gray-200 dark:border-white/[0.08]'

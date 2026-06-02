@@ -1,7 +1,7 @@
 import { useRef, useState, useCallback } from 'react'
 import { v4 as uuid } from 'uuid'
 import { chatNonStreaming } from '../api/agents'
-import { setActiveChatId, clearActiveChatId, chatWorkspaceSlug, setActiveWorkspace, setActiveAgentModel } from '../api/agent-context'
+import { setActiveChatId, clearActiveChatId, chatWorkspaceSlug, setActiveWorkspace, setActiveAgentModel, renderWorkspaceSection } from '../api/agent-context'
 import { isOllamaLocal } from '../api/backend'
 import { resolveWorkspace } from '../api/agents/workspace-resolve'
 import { useAgentModeStore } from '../stores/agentModeStore'
@@ -375,6 +375,17 @@ export function useAgentChat() {
     let agentSystemPrompt = strategy === 'hermes_xml'
       ? buildHermesToolPrompt(hermesToolDefs) + (systemPrompt ? `\n\n${systemPrompt}` : '')
       : buildAgentSystemPrompt(systemPrompt)
+
+    // Multi-Repo (Sprint C #8): when the agent workspace has extra paths,
+    // append a "Workspaces" section so the model can reference them by
+    // absolute path. Tool resolution still anchors relatives at the
+    // primary path via chatCtx → activeWorkspace.
+    {
+      const ws = useAgentModeStore.getState().workspaces[convId]
+      if (ws?.kind === 'folder' && (ws.extraPaths?.length ?? 0) > 0) {
+        agentSystemPrompt += renderWorkspaceSection(ws)
+      }
+    }
 
     // Caveman mode: append as response style modifier AFTER agent instructions
     // This ensures the model understands its agent role first, then applies terse style

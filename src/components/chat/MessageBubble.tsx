@@ -116,15 +116,21 @@ export function MessageBubble({ message, onRegenerate, onEdit, pendingApprovalId
           <ThinkingBlock thinking={message.thinking} />
         )}
 
-        {/* Agent Mode: render tool_call + reflection blocks chronologically.
-            Reflection blocks were added for #29 follow-up — narration the
-            model emitted between tool calls used to be wiped on the next
-            iteration; now it persists as a collapsible block, in the
-            order the model produced it. */}
+        {/* Agent Mode: render tool_call + reflection + answer blocks
+            chronologically. Reflection blocks persist narration the model
+            emitted between tool calls (added for #29 follow-up). Answer
+            blocks (2026-05) carry each iteration's outgoing text so the
+            tool calls don't all stack above a wall of summary at the
+            bottom — every provider, every model. */}
         {!isUser && message.agentBlocks && message.agentBlocks.length > 0 && (
           <>
             {[...message.agentBlocks]
-              .filter((b) => b.phase === 'tool_call' || b.phase === 'reflection')
+              .filter(
+                (b) =>
+                  b.phase === 'tool_call' ||
+                  b.phase === 'reflection' ||
+                  (b.phase === 'answer' && b.content.trim()),
+              )
               .sort((a, b) => a.timestamp - b.timestamp)
               .map((block) => {
                 if (block.phase === 'tool_call' && block.toolCall) {
@@ -140,6 +146,15 @@ export function MessageBubble({ message, onRegenerate, onEdit, pendingApprovalId
                 }
                 if (block.phase === 'reflection') {
                   return <ReflectionBlock key={block.id} content={block.content} />
+                }
+                if (block.phase === 'answer') {
+                  return (
+                    <div key={block.id} className="px-1 py-0.5">
+                      <div className="text-[0.8rem] leading-relaxed">
+                        <MarkdownRenderer content={block.content} />
+                      </div>
+                    </div>
+                  )
                 }
                 return null
               })}
@@ -207,24 +222,36 @@ export function MessageBubble({ message, onRegenerate, onEdit, pendingApprovalId
           ) : isUser ? (
             <p className="text-[0.78rem] leading-relaxed text-gray-800 dark:text-gray-200 whitespace-pre-wrap">{message.content}</p>
           ) : (
-            <div className="text-[0.78rem] leading-relaxed">
-              <MarkdownRenderer content={message.content} />
-              {suggestAgent && (
-                <div className="mt-2 flex items-start gap-2 px-2 py-1.5 rounded-md border border-amber-400/30 bg-amber-500/10 text-[0.65rem] text-amber-700 dark:text-amber-200">
-                  <Wrench size={11} className="mt-0.5 shrink-0" />
-                  <div className="flex-1">
-                    <p className="font-medium">This model tried to call a tool, but Agent Mode is off for this chat.</p>
-                    <p className="opacity-80 mt-0.5">Turn it on to let the model actually execute tools (read files, run commands, browse). Until then it'll keep emitting JSON that nothing reads.</p>
-                  </div>
-                  <button
-                    onClick={() => activeConversationId && toggleAgentMode(activeConversationId)}
-                    className="shrink-0 px-2 py-0.5 rounded border border-amber-400/40 hover:bg-amber-500/20 transition-colors font-medium"
-                  >
-                    Enable Agent
-                  </button>
+            // Answer-blocks (when present) already rendered the per-iteration
+            // text chronologically above; skip message.content here to avoid
+            // a duplicate dump at the bottom. Falls back to message.content
+            // for legacy chats / non-agent messages without answer blocks.
+            (() => {
+              const hasAnswerBlock = !!message.agentBlocks?.some(
+                (b) => b.phase === 'answer' && b.content.trim(),
+              )
+              if (hasAnswerBlock) return null
+              return (
+                <div className="text-[0.78rem] leading-relaxed">
+                  <MarkdownRenderer content={message.content} />
+                  {suggestAgent && (
+                    <div className="mt-2 flex items-start gap-2 px-2 py-1.5 rounded-md border border-amber-400/30 bg-amber-500/10 text-[0.65rem] text-amber-700 dark:text-amber-200">
+                      <Wrench size={11} className="mt-0.5 shrink-0" />
+                      <div className="flex-1">
+                        <p className="font-medium">This model tried to call a tool, but Agent Mode is off for this chat.</p>
+                        <p className="opacity-80 mt-0.5">Turn it on to let the model actually execute tools (read files, run commands, browse). Until then it'll keep emitting JSON that nothing reads.</p>
+                      </div>
+                      <button
+                        onClick={() => activeConversationId && toggleAgentMode(activeConversationId)}
+                        className="shrink-0 px-2 py-0.5 rounded border border-amber-400/40 hover:bg-amber-500/20 transition-colors font-medium"
+                      >
+                        Enable Agent
+                      </button>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
+              )
+            })()
           )}
 
           {!isEditing && (

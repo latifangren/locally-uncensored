@@ -21,8 +21,21 @@ import { explainError as explainToolError } from './error-hints'
 // pulls DELEGATE_TASK_TOOL_DEF + buildDelegateExecutor from this file at
 // module init.
 
-/** Max sub-agent nesting depth. Incremented on every delegate_task call. */
+/**
+ * Max sub-agent nesting depth. Kept for symmetry with the original Phase
+ * 13 design; the tool-registry filter (sub-agent never sees
+ * `delegate_task`) already enforces non-recursion, so this is a soft
+ * safety net rather than the primary guard.
+ */
 export const SUB_AGENT_MAX_DEPTH = 2
+
+/**
+ * Max sub-agents in flight at the same time (Bonus, 2026-05). Parallel
+ * siblings let the model fan out research tasks — e.g. "for each of these
+ * 4 files, summarize the public surface" — without the historic serial
+ * pressure from the depth counter doubling as a concurrency gate.
+ */
+export const SUB_AGENT_MAX_PARALLEL = 4
 
 /** Tight caps so a sub-agent cannot runaway inside the parent's budget. */
 export const SUB_AGENT_BUDGET = { maxToolCalls: 10, maxIterations: 5 } as const
@@ -33,7 +46,9 @@ export const DELEGATE_TASK_TOOL_DEF: MCPToolDefinition = {
     'Spawn a focused sub-agent to work on a sub-goal autonomously. '
     + 'USE for self-contained research or analysis tasks that would pollute the main conversation with tool-call chatter. '
     + 'The sub-agent has its own tight budget (max 10 tool calls, 5 ReAct iterations) and returns a concise final answer. '
-    + 'DO NOT call from inside another delegate_task — max nesting depth is 2. '
+    + 'PARALLELIZE: emit multiple delegate_task tool calls in the SAME assistant turn '
+    + 'to fan out (e.g. one sub-agent per file) — up to 4 run concurrently. '
+    + 'DO NOT call from inside another delegate_task — recursion is filtered by the harness. '
     + 'NOT a replacement for a regular tool call when one direct tool would do.',
   inputSchema: {
     type: 'object',
@@ -54,19 +69,24 @@ export const DELEGATE_TASK_TOOL_DEF: MCPToolDefinition = {
 }
 
 /**
- * Depth tracker — module-scoped so nested sub-agents across async
- * boundaries stay bounded. Reset only by successful return or thrown
+ * In-flight counter — module-scoped so parallel siblings + nested
+ * children share one bound. Reset only by successful return or thrown
  * error; see the try/finally in the executor.
+ *
+ * Pre-Bonus this was named `_depth` and doubled as a concurrency gate,
+ * which made three parallel siblings impossible. Now strictly counts
+ * concurrent sub-agents; the description forbids recursion and the
+ * registry filter enforces it.
  */
-let _depth = 0
+let _inFlight = 0
 
 /** Exposed for tests. */
 export function _getDepth(): number {
-  return _depth
+  return _inFlight
 }
 /** Exposed for tests. */
 export function _setDepth(n: number): void {
-  _depth = n
+  _inFlight = n
 }
 
 export type SubAgentRunner = (
@@ -139,7 +159,7 @@ export async function defaultSubAgentRunner(
         const td = registry.getToolByName(name)
         return td ? { name: td.name, inputSchema: td.inputSchema } : undefined
       },
-      execute: (name, args) => registry.execute(name, args),
+      execute: ((name: string, args: Record<string, any>) => registry.execute(name, args)) as any,
       explainError: (toolName, err) => explainToolError(toolName, err),
     })
 
@@ -165,21 +185,21 @@ export function buildDelegateExecutor(
   runner: SubAgentRunner = defaultSubAgentRunner
 ): (args: Record<string, any>) => Promise<string> {
   return async (args: Record<string, any>) => {
-    if (_depth >= SUB_AGENT_MAX_DEPTH) {
-      return 'Error: Maximum sub-agent nesting depth (2) reached. Continue the task yourself.'
+    if (_inFlight >= SUB_AGENT_MAX_PARALLEL) {
+      return `Error: Maximum sub-agent concurrency (${SUB_AGENT_MAX_PARALLEL}) reached. Wait for a running sub-agent to finish, or continue the task yourself.`
     }
     const goal = typeof args.goal === 'string' ? args.goal.trim() : ''
     if (!goal) return 'Error: delegate_task requires a "goal" argument.'
     const context = typeof args.context === 'string' ? args.context.trim() : ''
 
-    _depth++
+    _inFlight++
     try {
       const budget = new AgentBudget({ ...SUB_AGENT_BUDGET })
       return await runner(goal, context, { budget })
     } catch (err) {
       return `Error: ${err instanceof Error ? err.message : String(err)}`
     } finally {
-      _depth--
+      _inFlight--
     }
   }
 }
