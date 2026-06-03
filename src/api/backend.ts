@@ -480,6 +480,23 @@ export async function fetchExternalBytes(url: string): Promise<ArrayBuffer> {
   return res.arrayBuffer();
 }
 
+/**
+ * Fetch a localhost URL as raw bytes (Tauri-aware). Used to pull a generated
+ * ComfyUI image back so a vision-capable chat model can actually SEE it. In
+ * Tauri the browser can't fetch localhost directly (CORS) so we route through
+ * the Rust byte proxy; in dev a plain fetch works.
+ */
+export async function fetchLocalhostBytes(url: string): Promise<Uint8Array> {
+  if (isTauri()) {
+    const invoke = await getInvoke()
+    const bytes = (await invoke('proxy_localhost_stream', { url, method: 'GET', body: null })) as number[]
+    return new Uint8Array(bytes)
+  }
+  const res = await fetch(url)
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  return new Uint8Array(await res.arrayBuffer())
+}
+
 /** Open a URL in the system's default browser (works in both dev and Tauri) */
 export async function openExternal(url: string): Promise<void> {
   if (isTauri()) {

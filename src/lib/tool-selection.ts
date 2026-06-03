@@ -47,8 +47,14 @@ const TOOL_GROUPS: ToolGroup[] = [
     tools: ['screenshot'],
   },
   {
-    keywords: ['image', 'picture', 'generate image', 'draw', 'create image'],
-    tools: ['image_generate'],
+    // Creative image/video. Surface BOTH generators for any creative request so
+    // the model can chain image → video in one conversation (David: "ein Video
+    // aus dem Bild soll die LLM auch machen können"). Without video_generate
+    // here the keyword path dropped it (it was in no group + not ALWAYS_INCLUDE),
+    // so a "now animate it" follow-up had no tool to call.
+    keywords: ['image', 'picture', 'generate image', 'draw', 'create image', 'bild', 'foto', 'zeichne',
+      'video', 'animate', 'animation', 'clip', 'mp4', 'make a video', 'turn into a video', 'movie', 'gif', 'animiere'],
+    tools: ['image_generate', 'video_generate'],
   },
   {
     keywords: ['workflow', 'run workflow', 'automate'],

@@ -202,6 +202,41 @@ export async function listRunningModels(): Promise<string[]> {
   }
 }
 
+// ── Model capabilities (/api/show) ────────────────────────────────
+//
+// Ollama reports a model's modalities/skills as a `capabilities` array
+// (e.g. ['completion','vision','tools','thinking']). The chat-agent vision
+// feedback loop needs to know whether the active model can actually SEE an
+// image before it bothers attaching the generated picture. Cached per model
+// (capabilities don't change at runtime) and soft-fails to [] so a probe
+// failure never blocks a generation.
+const _capCache = new Map<string, string[]>()
+
+export async function getModelCapabilities(model: string): Promise<string[]> {
+  if (!model) return []
+  if (_capCache.has(model)) return _capCache.get(model)!
+  try {
+    const res = await localFetch(ollamaUrl("/show"), {
+      method: "POST",
+      body: JSON.stringify({ model }),
+      timeoutMs: 8000,
+    })
+    if (!res.ok) { _capCache.set(model, []); return [] }
+    const data = await res.json()
+    const caps: string[] = Array.isArray(data?.capabilities) ? data.capabilities : []
+    _capCache.set(model, caps)
+    return caps
+  } catch {
+    _capCache.set(model, [])
+    return []
+  }
+}
+
+/** True when the model can take image input (multimodal/vision). */
+export async function modelSupportsVision(model: string): Promise<boolean> {
+  return (await getModelCapabilities(model)).includes("vision")
+}
+
 export interface ModelCapabilityCheck {
   name: string
   ok: boolean

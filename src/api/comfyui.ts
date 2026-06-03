@@ -1,4 +1,4 @@
-import { comfyuiUrl, localFetch } from "./backend"
+import { comfyuiUrl, localFetch, fetchLocalhostBytes } from "./backend"
 import { log } from "../lib/logger"
 
 // ─── Control-plane fetch timeouts ───
@@ -900,6 +900,22 @@ export function getImageUrl(filename: string, subfolder: string = '', type: stri
   // ComfyUI output filenames are unique per generation, so a per-item token is
   // sufficient to defeat any rare filename-reuse cache collision.
   return comfyuiUrl(cacheBust != null ? `${path}&t=${cacheBust}` : path)
+}
+
+/**
+ * Fetch a ComfyUI /view image URL and return it base64-encoded (no data: prefix)
+ * so it can be handed to a vision-capable chat model as an `images` attachment.
+ * Used by the chat-agent vision feedback loop: after image_generate, the model
+ * SEES the picture it made and can comment on it.
+ */
+export async function fetchComfyImageBase64(url: string): Promise<string> {
+  const bytes = await fetchLocalhostBytes(url)
+  let binary = ''
+  const CHUNK = 0x8000 // avoid arg-count limits on String.fromCharCode
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK) as unknown as number[])
+  }
+  return btoa(binary)
 }
 
 // ─── Validate params ───

@@ -22,6 +22,8 @@ import { getToolPermission, executeAgentTool, AGENT_TOOL_DEFS } from '../api/too
 import { getToolCallingStrategy, type ToolCallingStrategy } from '../lib/model-compatibility'
 import { log } from '../lib/logger'
 import { buildHermesToolPrompt, buildHermesToolResult, parseHermesToolCalls, stripToolCallTags, hasToolCallTags } from '../api/hermes-tool-calling'
+import { parseLooseToolCalls, stripMatchedCalls } from '../lib/loose-tool-parse'
+import { buildVisionFeedback } from '../api/vision-feedback'
 import { compactMessages, getModelMaxTokens } from '../lib/context-compaction'
 import { useMemoryStore } from '../stores/memoryStore'
 import { getProviderForModel, getProviderIdFromModel } from '../api/providers'
@@ -668,6 +670,23 @@ export function useAgentChat() {
         // preserved as a `reflection` block so it renders above the tool
         // calls in chronological order. Only the final-turn content (no
         // tool_calls) becomes the message body.
+        // Loose tool-call fallback (David 2026-06-03): weak local models often
+        // WRITE the call into their answer text instead of using the structured
+        // tool_calls channel — gemma4:e4b answers in prose; qwen2.5-coder:14b
+        // wrote `image_generate(prompt="…")` as plain text and never emitted a
+        // real call, so the image/video flow never fired. If the native/Hermes
+        // channel produced nothing, lift any recognizable call out of the
+        // content (known tool names only) and strip it from the visible prose.
+        if (toolCalls.length === 0 && turnContent.trim()) {
+          const knownNames = toolRegistry.getAll().map((t) => t.name)
+          const loose = parseLooseToolCalls(turnContent, knownNames)
+          if (loose.calls.length > 0) {
+            toolCalls = loose.calls.map((c) => ({ function: { name: c.name, arguments: c.arguments } }))
+            turnContent = stripMatchedCalls(turnContent, loose.matched)
+            log.info('agent.loose_tool_call_recovered', { count: toolCalls.length, names: toolCalls.map((t) => t.function.name) })
+          }
+        }
+
         const isFinalTurn = toolCalls.length === 0
         if (isFinalTurn) {
           contentRef.current = turnContent
@@ -882,6 +901,27 @@ export function useAgentChat() {
           }
         }
 
+        // Vision feedback (David 2026-06-03): after image_generate, hand the
+        // generated picture to a vision-capable local model so it SEES the
+        // result and can comment — and learns the filename to chain into
+        // video_generate. Local Ollama only; buildVisionFeedback no-ops for
+        // text-only models, video results, or fetch failures.
+        if (providerId === 'ollama') {
+          for (const { tc, ac } of batch) {
+            const result = results.find((r) => r.id === ac.id)
+            if (result?.status === 'completed' && result.result) {
+              try {
+                const vf = await buildVisionFeedback(modelToUse, tc.function.name, result.result)
+                if (vf) {
+                  agentMessages.push(vf as unknown as ChatMessage)
+                  log.info('agent.vision_feedback_attached', { tool: tc.function.name })
+                  break // one image per batch is enough context
+                }
+              } catch { /* non-fatal — flow still works without the visual */ }
+            }
+          }
+        }
+
         // Reset content for next iteration
         contentRef.current = ''
         thinkingRef.current = ''
@@ -1023,6 +1063,12 @@ Workflow for build / create tasks:
 1. (Optional) file_list to scout the target directory.
 2. file_write the artefact(s) directly. For a website: write index.html, style.css, script.js as separate file_write calls.
 3. After the LAST file_write, write a 1–3 sentence final answer ("Done — wrote 3 files to <path>"). Nothing in between.
+
+Creative tools — image_generate, video_generate:
+- When the user asks for an image / picture / drawing, CALL image_generate. You HAVE this tool — do NOT reply with prose about DALL-E, Midjourney, or "as a text model I can't". Just call it.
+- After image_generate runs you will be shown the generated image; LOOK at it and briefly describe what you actually see.
+- To make a video, CALL video_generate. To animate an image you just generated, call video_generate with inputImage set to that image's filename (it is in the image_generate result).
+- Emit these as REAL tool calls through the tool channel — never write the call as plain text like image_generate(prompt="…") in your answer.
 
 Other rules:
 - You MUST use tools — NEVER answer from memory or guess file contents.
