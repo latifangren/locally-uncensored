@@ -1002,6 +1002,44 @@ export function getImageBundles(): ModelBundle[] {
         },
       ],
     },
+    {
+      name: 'SDXL VAE (fp16-fix) — add-on',
+      description: 'Standard SDXL VAE (madebyollin fp16-fix). Optional VAE override for any SDXL checkpoint; fixes washed-out / desaturated output on some models. After download, pick it under Advanced → VAE.',
+      tags: ['SDXL', 'VAE', 'Add-on'],
+      verified: true,
+      totalSizeGB: 0.33,
+      vramRequired: 'any',
+      workflow: 'sdxl',
+      url: 'https://huggingface.co/madebyollin/sdxl-vae-fp16-fix',
+      files: [
+        {
+          name: 'SDXL VAE fp16-fix',
+          description: 'Drop-in SDXL VAE → models/vae.',
+          pulls: '', tags: ['VAE', '335 MB'], updated: '',
+          downloadUrl: 'https://huggingface.co/madebyollin/sdxl-vae-fp16-fix/resolve/main/sdxl_vae.safetensors',
+          filename: 'sdxl_vae.safetensors', subfolder: 'vae', sizeGB: 0.33,
+        },
+      ],
+    },
+    {
+      name: 'Pixel Art XL — SDXL LoRA',
+      description: 'nerijs Pixel Art XL — turns any SDXL model into crisp pixel art. A clearly-visible style LoRA. After download, pick it under Advanced → LoRA and raise the strength.',
+      tags: ['SDXL', 'LoRA', 'Style'],
+      verified: true,
+      totalSizeGB: 0.17,
+      vramRequired: 'any',
+      workflow: 'sdxl',
+      url: 'https://huggingface.co/nerijs/pixel-art-xl',
+      files: [
+        {
+          name: 'Pixel Art XL LoRA',
+          description: 'SDXL pixel-art style LoRA → models/loras.',
+          pulls: '', tags: ['LoRA', '170 MB'], updated: '',
+          downloadUrl: 'https://huggingface.co/nerijs/pixel-art-xl/resolve/main/pixel-art-xl.safetensors',
+          filename: 'pixel-art-xl.safetensors', subfolder: 'loras', sizeGB: 0.17,
+        },
+      ],
+    },
   ]
 }
 

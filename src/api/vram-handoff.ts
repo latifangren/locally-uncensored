@@ -58,6 +58,8 @@ import {
   extractComfyOutputFiles,
   getImageUrl,
   classifyModel,
+  isI2VModel,
+  uploadImage,
   buildTxt2VidWorkflow,
   snapToVideoGrid,
   MODEL_TYPE_DEFAULTS,
@@ -345,6 +347,10 @@ export interface VramHandoffArgs {
   prompt?: string
   negativePrompt?: string
   model?: string
+  // Image-to-image / image-to-video: a filename from a prior generate result.
+  inputImage?: string
+  // Image-to-image denoise strength (0.05–1.0).
+  denoise?: number
   // Video-only
   frames?: number
   fps?: number
@@ -389,12 +395,25 @@ async function runHandoff(kind: 'image' | 'video', args: VramHandoffArgs): Promi
       targetModel = typeof args.model === 'string' && args.model ? args.model : models[0].name
     } else {
       const [models, backend] = await Promise.all([getVideoModels(), detectVideoBackend()])
-      if (models.length === 0 || backend === 'none') {
-        emitHandoff('error', { kind, detail: 'no video model installed' })
-        return 'Error: No video model installed in ComfyUI (need a Wan/Hunyuan model or AnimateDiff nodes). Download one from the Create tab and try again.'
+      const wantI2V = typeof args.inputImage === 'string' && !!args.inputImage
+      if (wantI2V) {
+        // Image-to-video needs an I2V-capable model (SVD / FramePack). Those use
+        // built-in ComfyUI nodes, so a 'none' text-to-video backend is fine here.
+        const i2vModels = models.filter((m) => isI2VModel(m.name))
+        if (i2vModels.length === 0) {
+          emitHandoff('error', { kind, detail: 'no i2v model installed' })
+          return 'Error: Image-to-video needs an I2V model such as SVD. Install one from Models → Discover (e.g. "SVD-XT 1.1 — Image to Video"), then try again.'
+        }
+        targetModel = typeof args.model === 'string' && args.model ? args.model : i2vModels[0].name
+        videoBackend = backend
+      } else {
+        if (models.length === 0 || backend === 'none') {
+          emitHandoff('error', { kind, detail: 'no video model installed' })
+          return 'Error: No video model installed in ComfyUI (need a Wan/Hunyuan model or AnimateDiff nodes). Download one from the Create tab and try again.'
+        }
+        targetModel = typeof args.model === 'string' && args.model ? args.model : models[0].name
+        videoBackend = backend
       }
-      targetModel = typeof args.model === 'string' && args.model ? args.model : models[0].name
-      videoBackend = backend
     }
   } catch (e) {
     // ComfyUI unreachable while listing models — we have not unloaded anything,
@@ -514,6 +533,14 @@ async function runHandoff(kind: 'image' | 'video', args: VramHandoffArgs): Promi
 async function generateImage(prompt: string, model: string, args: VramHandoffArgs): Promise<string> {
   const { buildDynamicWorkflow } = await import('./dynamic-workflow')
   try {
+    // Image-to-image: resolve the referenced output image into ComfyUI's input
+    // folder, then let buildDynamicWorkflow wire LoadImage → VAEEncode + denoise.
+    let inputImage: string | undefined
+    let denoise: number | undefined
+    if (typeof args.inputImage === 'string' && args.inputImage) {
+      inputImage = await resolveInputImage(args.inputImage)
+      denoise = clampFloat(args.denoise, 0.6, 0.05, 1.0)
+    }
     const workflow = await buildDynamicWorkflow(
       {
         prompt,
@@ -527,6 +554,7 @@ async function generateImage(prompt: string, model: string, args: VramHandoffArg
         height: 1024,
         seed: -1,
         batchSize: 1,
+        ...(inputImage ? { inputImage, denoise } : {}),
       },
       classifyModel(model),
     )
@@ -547,6 +575,40 @@ async function generateVideo(
 ): Promise<string> {
   try {
     const type = classifyModel(model)
+
+    // ── Image-to-video (SVD / FramePack) ───────────────────────────
+    // Resolve the still into ComfyUI's input folder and route through the
+    // dynamic builder's I2V strategy. Conservative size + low frame count keep
+    // it inside 12 GB; SVD bundles its own CLIP-vision + VAE in the checkpoint.
+    if (typeof args.inputImage === 'string' && args.inputImage && isI2VModel(model)) {
+      const { buildDynamicWorkflow } = await import('./dynamic-workflow')
+      const inputImage = await resolveInputImage(args.inputImage)
+      const frames = clampInt(args.frames, 14, 1, 25)
+      const fps = clampInt(args.fps, 8, 1, 30)
+      const workflow = await buildDynamicWorkflow(
+        {
+          prompt,
+          negativePrompt: typeof args.negativePrompt === 'string' ? args.negativePrompt : '',
+          model,
+          sampler: 'euler',
+          scheduler: 'normal',
+          steps: 20,
+          cfgScale: 3,
+          width: 768,
+          height: 448,
+          seed: -1,
+          batchSize: 1,
+          frames,
+          fps,
+          inputImage,
+        },
+        type,
+      )
+      const promptId = await submitWorkflow(workflow)
+      return await pollAndExtract(promptId, prompt, label('video'), getVideoTimeoutMs())
+    }
+
+    // ── Text-to-video ──────────────────────────────────────────────
     const defaults = MODEL_TYPE_DEFAULTS[type] ?? MODEL_TYPE_DEFAULTS.wan
     const snapped = snapToVideoGrid(defaults.width, defaults.height)
     const frames = clampInt(args.frames, defaults.frames, 1, 256)
@@ -622,6 +684,36 @@ function clampInt(v: unknown, fallback: number, min: number, max: number): numbe
   const n = typeof v === 'number' ? v : Number(v)
   if (!Number.isFinite(n)) return fallback
   return Math.max(min, Math.min(max, Math.round(n)))
+}
+
+function clampFloat(v: unknown, fallback: number, min: number, max: number): number {
+  const n = typeof v === 'number' ? v : Number(v)
+  if (!Number.isFinite(n)) return fallback
+  return Math.max(min, Math.min(max, n))
+}
+
+/**
+ * Turn an `inputImage` argument (a prior generate result's filename, or a /view
+ * URL) into a filename inside ComfyUI's *input* folder, ready for LoadImage.
+ * Generated images live in ComfyUI's *output* folder, but LoadImage reads from
+ * *input* — so we fetch the referenced image and re-upload it via /upload/image.
+ */
+async function resolveInputImage(ref: string): Promise<string> {
+  let url: string
+  let name: string
+  if (/^https?:\/\//i.test(ref)) {
+    url = ref
+    const m = ref.match(/[?&]filename=([^&]+)/)
+    name = m ? decodeURIComponent(m[1]) : 'lu_input.png'
+  } else {
+    name = ref.replace(/^.*[\\/]/, '')
+    url = getImageUrl(name, '', 'output')
+  }
+  const resp = await fetch(url)
+  if (!resp.ok) throw new Error(`could not read input image "${ref}" (HTTP ${resp.status})`)
+  const blob = await resp.blob()
+  const file = new File([blob], name, { type: blob.type || 'image/png' })
+  return await uploadImage(file)
 }
 
 function getImageTimeoutMs(): number {

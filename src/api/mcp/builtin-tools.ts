@@ -471,7 +471,7 @@ const BUILTIN_TOOLS: MCPToolDefinition[] = [
     description:
       'Generate an image from a text prompt via the local ComfyUI pipeline. Blocks up to 5 minutes. '
       + 'USE for "draw me", "make an image of", "generate a picture". '
-      + 'NOT for photo editing — this is text-to-image only; no inpainting via this tool. '
+      + 'Pass `inputImage` (a filename from an earlier image_generate result) for image-to-image — restyle / edit an existing image at the given `denoise` strength; omit it for text-to-image. '
       + 'First installed image model is auto-selected (or pass `model`). '
       + 'EXPECT A PAUSE: on a single-GPU machine LU may briefly unload the chat model from VRAM to fit the image model, then reload it after — typically a 30-90s swap (longer on a cold ComfyUI start). This avoids out-of-memory errors; your conversation is fully preserved across the swap. '
       + 'Rate-limit yourself to 1 call per turn — ComfyUI serializes generations internally so parallel calls will queue, not speed up.',
@@ -481,6 +481,8 @@ const BUILTIN_TOOLS: MCPToolDefinition[] = [
         prompt: { type: 'string', description: 'Positive text description of the desired image' },
         negativePrompt: { type: 'string', description: 'Things to avoid (blurry, deformed, etc.)' },
         model: { type: 'string', description: 'Optional image model filename to use. Omit to auto-select the first installed image model.' },
+        inputImage: { type: 'string', description: 'Optional. Filename of a previously generated image (from an earlier image_generate result) to use as the base for image-to-image. Omit for text-to-image.' },
+        denoise: { type: 'number', description: 'Image-to-image strength 0.05–1.0 (default 0.6). Lower keeps more of the input image, higher follows the prompt more. Only used together with inputImage.' },
       },
       required: ['prompt'],
     },
@@ -492,7 +494,7 @@ const BUILTIN_TOOLS: MCPToolDefinition[] = [
     description:
       'Generate a short video clip from a text prompt via the local ComfyUI pipeline (Wan / Hunyuan / AnimateDiff backend, auto-detected). Blocks up to 10 minutes. '
       + 'USE for "make a video of", "animate", "generate a clip". '
-      + 'Text-to-video only — no image input via this tool. First installed video model is auto-selected (or pass `model`). '
+      + 'Pass `inputImage` (a filename from an earlier image_generate result) to animate a still image — image-to-video, which auto-selects an installed I2V model such as SVD; omit it for text-to-video. First installed video model is auto-selected (or pass `model`). '
       + 'Write ONE clear prompt and call this ONCE per turn — video generation is slow and ComfyUI queues parallel calls rather than speeding up. '
       + 'EXPECT A PAUSE: LU will briefly unload the chat model from VRAM to fit the (large) video model, then reload it after — typically a 30-90s swap, longer on a cold ComfyUI start. This prevents out-of-memory errors; your conversation is preserved across the swap.',
     inputSchema: {
@@ -503,6 +505,7 @@ const BUILTIN_TOOLS: MCPToolDefinition[] = [
         model: { type: 'string', description: 'Optional video model filename to use. Omit to auto-select the first installed video model.' },
         frames: { type: 'number', description: 'Number of frames to generate (clamped per model defaults; e.g. ~81 for Wan). Omit for the model default.' },
         fps: { type: 'number', description: 'Frames per second of the output clip (e.g. 16). Omit for the model default.' },
+        inputImage: { type: 'string', description: 'Optional. Filename of a previously generated image to animate (image-to-video). Requires an installed I2V model such as SVD. Omit for text-to-video.' },
       },
       required: ['prompt'],
     },
