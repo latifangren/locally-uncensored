@@ -81,7 +81,7 @@ vi.mock('../agent-context', () => ({
 // settingsStore is the real module — pure, no services. The orchestrator reads
 // settings.exclusiveVramMode through it; default DEFAULT_SETTINGS = 'auto'.
 
-import { decideUnload, vramHandoffGenerate, pollGone, resolveClip } from '../vram-handoff'
+import { decideUnload, vramHandoffGenerate, pollGone, resolveClip, resolveModelName } from '../vram-handoff'
 import { useSettingsStore } from '../../stores/settingsStore'
 
 const GB = 1024 * 1024 * 1024
@@ -481,5 +481,38 @@ describe('vramHandoffGenerate — ComfyUI lifecycle', () => {
     const out = await vramHandoffGenerate('image', { prompt: 'a tree' })
     expect(backendCall).toHaveBeenCalledWith('start_comfyui')
     expect(out).toContain('Image generated: out.png')
+  })
+})
+
+describe('resolveModelName — fuzzy model match (David 2026-06-04: "FramePack" must be enough)', () => {
+  const installed = [
+    { name: 'FramePackI2V_HY_fp8_e4m3fn.safetensors' },
+    { name: 'svd_xt_1_1.safetensors' },
+    { name: 'wan2.1_t2v_1.3B_bf16.safetensors' },
+    { name: 'sd_xl_base_1.0.safetensors' },
+  ]
+  it('resolves a casual "FramePack" to the exact installed filename', () => {
+    expect(resolveModelName('FramePack', installed)).toBe('FramePackI2V_HY_fp8_e4m3fn.safetensors')
+  })
+  it('resolves case-insensitively ("framepack")', () => {
+    expect(resolveModelName('framepack', installed)).toBe('FramePackI2V_HY_fp8_e4m3fn.safetensors')
+  })
+  it('resolves "SVD" → svd_xt_1_1', () => {
+    expect(resolveModelName('SVD', installed)).toBe('svd_xt_1_1.safetensors')
+  })
+  it('resolves "wan" → the wan t2v model', () => {
+    expect(resolveModelName('wan', installed)).toBe('wan2.1_t2v_1.3B_bf16.safetensors')
+  })
+  it('resolves an exact filename unchanged', () => {
+    expect(resolveModelName('svd_xt_1_1.safetensors', installed)).toBe('svd_xt_1_1.safetensors')
+  })
+  it('resolves "sdxl" via substring to the SDXL base', () => {
+    expect(resolveModelName('sdxl', installed)).toBe('sd_xl_base_1.0.safetensors')
+  })
+  it('returns null when nothing matches (caller reports it, no silent wrong model)', () => {
+    expect(resolveModelName('totally-unknown-xyz', installed)).toBeNull()
+  })
+  it('returns null for an empty installed list', () => {
+    expect(resolveModelName('FramePack', [])).toBeNull()
   })
 })

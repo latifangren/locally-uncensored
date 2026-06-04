@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseLooseToolCalls, stripMatchedCalls, canonicalToolName } from '../loose-tool-parse'
+import { parseLooseToolCalls, stripMatchedCalls, stripToolCallText, canonicalToolName } from '../loose-tool-parse'
 
 const KNOWN = ['image_generate', 'video_generate', 'web_search', 'file_write']
 
@@ -127,5 +127,40 @@ describe('stripMatchedCalls', () => {
     const stripped = stripMatchedCalls(txt, r.matched)
     expect(stripped).not.toContain('image_generate(prompt=')
     expect(stripped.toLowerCase()).toContain('okay')
+  })
+})
+
+describe('stripToolCallText — keep raw tool-call JSON out of the visible bubble', () => {
+  it('strips a bare {"name","arguments"} object, keeps the prose (David 2026-06-04 leak)', () => {
+    const txt = 'Hier ist dein Bild.\n{ "name": "image_generate", "arguments": { "prompt": "eine katze" } }'
+    const out = stripToolCallText(txt, KNOWN)
+    expect(out).toContain('Hier ist dein Bild.')
+    expect(out).not.toContain('"name"')
+    expect(out).not.toContain('image_generate')
+  })
+
+  it('strips a fenced ```json tool call but keeps surrounding prose', () => {
+    const txt = 'Okay:\n```json\n{ "name": "image_generate", "arguments": { "prompt": "a cat" } }\n```'
+    const out = stripToolCallText(txt, KNOWN)
+    expect(out).not.toContain('image_generate')
+    expect(out.toLowerCase()).toContain('okay')
+  })
+
+  it('strips function-call syntax echoed alongside a native call', () => {
+    const out = stripToolCallText('Generating now image_generate(prompt="a fox")', KNOWN)
+    expect(out).not.toContain('image_generate(')
+  })
+
+  it('leaves ordinary prose untouched', () => {
+    expect(stripToolCallText('The cube is small and red.', KNOWN)).toBe('The cube is small and red.')
+  })
+
+  it('keeps a non-tool JSON object (no known tool name) intact', () => {
+    const out = stripToolCallText('Result: {"foo": 1, "bar": 2}', KNOWN)
+    expect(out).toContain('foo')
+  })
+
+  it('returns empty when the content is ONLY a tool call', () => {
+    expect(stripToolCallText('{ "name": "video_generate", "arguments": { "seconds": 4 } }', KNOWN)).toBe('')
   })
 })

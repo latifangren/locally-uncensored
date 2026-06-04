@@ -1,21 +1,29 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ChevronDown, Brain } from 'lucide-react'
 import { MarkdownRenderer } from './MarkdownRenderer'
 
 interface Props {
     thinking: string
+    /** True while the model is actively producing this turn. Auto-expands the
+     *  block so the reasoning is visible STREAMING in real time (David 2026-06-04),
+     *  then auto-collapses once the turn finishes. The user can still toggle. */
+    streaming?: boolean
 }
 
-export function ThinkingBlock({ thinking }: Props) {
-    const [open, setOpen] = useState(false)
+export function ThinkingBlock({ thinking, streaming }: Props) {
+    // null = follow `streaming` automatically; true/false = user override.
+    const [userToggled, setUserToggled] = useState<boolean | null>(null)
+    const open = userToggled !== null ? userToggled : !!streaming
+    // When the turn ends, drop the manual override so the NEXT turn auto-expands.
+    useEffect(() => { if (!streaming) setUserToggled(null) }, [streaming])
 
     if (!thinking) return null
 
     return (
         <div className="mb-0.5">
             <button
-                onClick={() => setOpen(!open)}
+                onClick={() => setUserToggled(!open)}
                 className="flex items-center gap-1.5 py-0.5 text-left hover:opacity-80 transition-opacity"
                 aria-label="Toggle thinking details"
             >

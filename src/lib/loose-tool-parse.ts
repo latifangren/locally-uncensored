@@ -75,8 +75,8 @@ function parseCallArgs(inner: string): Record<string, unknown> {
 }
 
 /** Find bare/fenced JSON objects that name a known tool: {"name":"X","arguments":{…}}. */
-function parseJsonObjectCalls(text: string, known: Set<string>): LooseToolCall[] {
-  const calls: LooseToolCall[] = []
+function parseJsonObjectCalls(text: string, known: Set<string>): { call: LooseToolCall; snippet: string }[] {
+  const calls: { call: LooseToolCall; snippet: string }[] = []
   // Scan every top-level-ish {...} candidate. Cheap brace-scan; repairJson
   // tolerates trailing commas / single quotes / unquoted keys.
   const candidates: string[] = []
@@ -103,7 +103,9 @@ function parseJsonObjectCalls(text: string, known: Set<string>): LooseToolCall[]
     const name = parsed.name || parsed.tool || parsed.tool_name || parsed.function
     if (typeof name === 'string' && known.has(name)) {
       const a = parsed.arguments || parsed.parameters || parsed.args || parsed.params || {}
-      calls.push({ name, arguments: (a && typeof a === 'object') ? a : {} })
+      // Report the source snippet so the caller can strip the raw JSON object
+      // from the visible prose (otherwise it leaks as a "notes"/JSON block).
+      calls.push({ call: { name, arguments: (a && typeof a === 'object') ? a : {} }, snippet: cand })
     }
   }
   return calls
@@ -141,8 +143,8 @@ export function parseLooseToolCalls(text: string, known: string[]): LooseParseRe
     while ((tm = tagRe.exec(text)) !== null) matched.push(tm[0])
   }
 
-  // 2) JSON objects naming a known tool.
-  for (const c of parseJsonObjectCalls(text, knownSet)) push(c, '')
+  // 2) JSON objects naming a known tool (snippet reported so prose can be cleaned).
+  for (const { call, snippet } of parseJsonObjectCalls(text, knownSet)) push(call, snippet)
 
   // 3) Function-call syntax  name( ... )  — only for known tool names.
   for (const name of knownSet) {
@@ -201,4 +203,33 @@ export function stripMatchedCalls(text: string, matched: string[]): string {
   }
   // Tidy leftover empty code fences / blank lines.
   return out.replace(/```(?:json|python|tool_code)?\s*```/gi, '').replace(/\n{3,}/g, '\n\n').trim()
+}
+
+/**
+ * Strip ANY recognizable tool-call text (JSON object, function-syntax, Hermes
+ * tag, or a fenced ```json block that is actually a call) out of a model's
+ * VISIBLE prose. Unlike the loose-parse → strip path (which only runs when the
+ * native channel produced nothing), this is meant to run on EVERY turn's
+ * content so a model that emits a proper native call AND echoes the same call
+ * as text doesn't leak raw JSON into the chat as a "notes"/JSON block.
+ *
+ * Only `known` tool names are recognized, so ordinary prose with stray braces
+ * is left intact. Tool args/results remain in the agent's internal history —
+ * this only cleans what the USER sees in the bubble.
+ */
+export function stripToolCallText(text: string, known: string[]): string {
+  if (!text || !text.trim()) return ''
+  const { matched } = parseLooseToolCalls(text, known)
+  let out = stripMatchedCalls(text, matched)
+  // Drop fenced code blocks whose body is a tool call (```json {"name":…}```).
+  out = out.replace(/```(?:json|tool_code|tool|python)?\s*([\s\S]*?)```/gi, (m, inner) => {
+    const looksLikeCall =
+      /["']?(?:name|tool|function)["']?\s*[:=]/.test(inner) &&
+      /["']?(?:arguments|parameters|params|prompt)["']?\s*[:=]/.test(inner)
+    return looksLikeCall ? '' : m
+  })
+  return out
+    .replace(/```(?:json|tool_code)?\s*```/gi, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
 }

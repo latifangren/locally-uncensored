@@ -111,9 +111,10 @@ export function MessageBubble({ message, onRegenerate, onEdit, pendingApprovalId
       </div>
 
       <div className="max-w-[80%] space-y-0.5">
-        {/* Thinking block */}
+        {/* Thinking block — auto-expands while this (last) turn is still
+            producing so the reasoning streams LIVE, then collapses (David 2026-06-04). */}
         {!isUser && message.thinking && (
-          <ThinkingBlock thinking={message.thinking} />
+          <ThinkingBlock thinking={message.thinking} streaming={!!isLast && !message.content?.trim()} />
         )}
 
         {/* Agent Mode: render tool_call + reflection + answer blocks

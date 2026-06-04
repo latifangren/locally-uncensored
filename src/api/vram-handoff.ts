@@ -69,6 +69,43 @@ import type { ModelCapabilities } from './comfyui-nodes'
 import { getActiveAgentModel } from './agent-context'
 import { log } from '../lib/logger'
 
+/**
+ * Resolve a casual model name the user/LLM typed (e.g. "FramePack", "wan",
+ * "sdxl") to an actually-installed model FILENAME. David 2026-06-04: no end user
+ * types `FramePackI2V_HY_fp8_e4m3fn.safetensors`. Tries, in order: normalized
+ * exact match, requested-is-substring-of-model, model-is-substring, then token
+ * overlap. Returns null when nothing matches confidently, so the caller reports
+ * it instead of silently generating with the wrong model.
+ */
+export function resolveModelName(
+  requested: string,
+  installed: { name: string }[],
+): string | null {
+  const norm = (s: string) =>
+    s.toLowerCase().replace(/\.(safetensors|ckpt|pt|pth|gguf|sft|bin)$/i, '').replace(/[^a-z0-9]+/g, '')
+  const r = norm(requested)
+  if (!r || installed.length === 0) return null
+  // 1) exact normalized filename match
+  let hit = installed.find((m) => norm(m.name) === r)
+  if (hit) return hit.name
+  // 2) casual name contained in a model filename ("framepack" → "framepacki2v…")
+  hit = installed.find((m) => norm(m.name).includes(r))
+  if (hit) return hit.name
+  // 3) a model filename contained in the (longer) requested string
+  hit = installed.find((m) => norm(m.name).length >= 3 && r.includes(norm(m.name)))
+  if (hit) return hit.name
+  // 4) token overlap — most request words appear in the model filename
+  const tokens = requested.toLowerCase().split(/[^a-z0-9]+/).filter((t) => t.length > 2)
+  let best: { name: string } | null = null
+  let bestScore = 0
+  for (const m of installed) {
+    const mn = norm(m.name)
+    const score = tokens.filter((t) => mn.includes(t)).length
+    if (score > bestScore) { bestScore = score; best = m }
+  }
+  return best && bestScore > 0 ? best.name : null
+}
+
 export type HandoffPhase =
   | 'deciding'
   | 'freeing_vram'
@@ -433,7 +470,16 @@ async function runHandoff(kind: 'image' | 'video', args: VramHandoffArgs): Promi
         emitHandoff('error', { kind, detail: 'no image model installed' })
         return 'Error: No image model installed. Download one from Models → Discover (e.g. "FLUX.1 [schnell] FP8", "Z-Image Turbo", or "Juggernaut XL V9") and try again.'
       }
-      targetModel = typeof args.model === 'string' && args.model ? args.model : models[0].name
+      if (typeof args.model === 'string' && args.model) {
+        const resolved = resolveModelName(args.model, models)
+        if (!resolved) {
+          emitHandoff('error', { kind, detail: 'model not found' })
+          return `Error: No installed image model matches "${args.model}". Installed: ${models.map((m) => m.name).join(', ')}. Try one of those names (a partial name like "FLUX" or "SDXL" works).`
+        }
+        targetModel = resolved
+      } else {
+        targetModel = models[0].name
+      }
     } else {
       const [models, backend] = await Promise.all([getVideoModels(), detectVideoBackend()])
       const wantI2V = typeof args.inputImage === 'string' && !!args.inputImage
@@ -445,7 +491,16 @@ async function runHandoff(kind: 'image' | 'video', args: VramHandoffArgs): Promi
           emitHandoff('error', { kind, detail: 'no i2v model installed' })
           return 'Error: Image-to-video needs an I2V model such as SVD. Install one from Models → Discover (e.g. "SVD-XT 1.1 — Image to Video"), then try again.'
         }
-        targetModel = typeof args.model === 'string' && args.model ? args.model : i2vModels[0].name
+        if (typeof args.model === 'string' && args.model) {
+          const resolved = resolveModelName(args.model, i2vModels)
+          if (!resolved) {
+            emitHandoff('error', { kind, detail: 'i2v model not found' })
+            return `Error: No installed image-to-video model matches "${args.model}". Installed I2V: ${i2vModels.map((m) => m.name).join(', ')}. A partial name like "SVD" or "FramePack" works.`
+          }
+          targetModel = resolved
+        } else {
+          targetModel = i2vModels[0].name
+        }
         videoBackend = backend
       } else {
         // Text-to-video must NOT pick an image-to-video-only checkpoint (SVD /
@@ -457,7 +512,16 @@ async function runHandoff(kind: 'image' | 'video', args: VramHandoffArgs): Promi
           emitHandoff('error', { kind, detail: 'no text-to-video model installed' })
           return 'Error: No text-to-video model installed. Download one from Models → Discover (e.g. "Wan 2.1 — 1.3B (Lightweight)" for 8-10 GB VRAM or "HunyuanVideo 1.5 T2V FP8" for 12+ GB) — or generate an image first and animate it with an I2V model like "SVD-XT 1.1".'
         }
-        targetModel = typeof args.model === 'string' && args.model ? args.model : t2vModels[0].name
+        if (typeof args.model === 'string' && args.model) {
+          const resolved = resolveModelName(args.model, t2vModels)
+          if (!resolved) {
+            emitHandoff('error', { kind, detail: 't2v model not found' })
+            return `Error: No installed text-to-video model matches "${args.model}". Installed T2V: ${t2vModels.map((m) => m.name).join(', ')}. A partial name like "Wan" or "Hunyuan" works.`
+          }
+          targetModel = resolved
+        } else {
+          targetModel = t2vModels[0].name
+        }
         videoBackend = backend
       }
     }

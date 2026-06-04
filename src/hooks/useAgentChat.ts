@@ -22,7 +22,7 @@ import { getToolPermission, executeAgentTool, AGENT_TOOL_DEFS } from '../api/too
 import { getToolCallingStrategy, type ToolCallingStrategy } from '../lib/model-compatibility'
 import { log } from '../lib/logger'
 import { buildHermesToolPrompt, buildHermesToolResult, parseHermesToolCalls, stripToolCallTags, hasToolCallTags } from '../api/hermes-tool-calling'
-import { parseLooseToolCalls, stripMatchedCalls, canonicalToolName } from '../lib/loose-tool-parse'
+import { parseLooseToolCalls, stripMatchedCalls, stripToolCallText, canonicalToolName } from '../lib/loose-tool-parse'
 import { buildVisionFeedback } from '../api/vision-feedback'
 import { compactMessages, getModelMaxTokens } from '../lib/context-compaction'
 import { useMemoryStore } from '../stores/memoryStore'
@@ -455,6 +455,29 @@ export function useAgentChat() {
       agentMaxIterations: settings.agentMaxIterations ?? 25,
     })
 
+    // ── Over-loop guard (David 2026-06-04) ──────────────────────────────
+    // LIVE: "mach mir ein bild von einer katze" made the SAME image 13× then
+    // invented new prompts and ran 4min+. Root cause: the loop only ends at 0
+    // tool calls, so a chatty model keeps emitting image_generate/video_generate.
+    // Fix: generate ONLY what the user asked for, exactly once each, then stop —
+    // plus a duplicate-call breaker so any tool repeated with identical args is
+    // skipped. Caps derive from the user's actual request.
+    const userPromptText =
+      [...agentMessages].reverse().find((m) => m.role === 'user')?.content || ''
+    const wantsImage = /\b(bild|bilder|foto|image|picture|pic|draw|zeichne|mal(e|en)?|grafik|illustration|render)\b/i.test(userPromptText)
+    const wantsVideo = /\b(video|clip|animier\w*|animate|film|gif|bewegt|motion|mp4|webm)\b/i.test(userPromptText)
+    const maxImageGen = wantsVideo && !wantsImage ? 0 : 1
+    const maxVideoGen = wantsVideo ? 1 : 0
+    let imageGenDone = 0
+    let videoGenDone = 0
+    let mediaSteered = false
+    let mediaSynthesized = false
+    let forceNoThink = false
+    let dudRetried = false
+    const executedCallKeys = new Set<string>()
+    const callKey = (tc: { function: { name: string; arguments: unknown } }) =>
+      tc.function.name + '|' + JSON.stringify(tc.function.arguments ?? {})
+
     try {
       // ── Agent Loop ──────────────────────────────────────────
       while (runningRef.current && !abort.signal.aborted) {
@@ -477,11 +500,16 @@ export function useAgentChat() {
         // thinking mode; the stripper removes the tags silently.
         const canThinkAgent = isThinkingCompatible(activeModel)
         const plainPlanAgent = isPlainTextPlanner(activeModel)
-        const thinkOpt: boolean | undefined = canThinkAgent
-          ? (settings.thinkingEnabled === false && plainPlanAgent
-              ? undefined
-              : settings.thinkingEnabled === true)
-          : undefined
+        // forceNoThink: set by the dud-turn recovery below — a thinking model
+        // (gemma4) dumped its whole answer into the thinking channel and emitted
+        // nothing usable, so we retry this turn with thinking OFF.
+        const thinkOpt: boolean | undefined = forceNoThink
+          ? (canThinkAgent ? false : undefined)
+          : canThinkAgent
+            ? (settings.thinkingEnabled === false && plainPlanAgent
+                ? undefined
+                : settings.thinkingEnabled === true)
+            : undefined
 
         const chatOptions = {
           temperature: settings.temperature,
@@ -489,13 +517,19 @@ export function useAgentChat() {
           topK: settings.topK,
           maxTokens: settings.maxTokens || undefined,
           // Bug AA v2.5.0 — Kj103x. Same num_ctx override flow as useChat.
-          contextWindow: settings.contextWindowOverride || undefined,
+          // David 2026-06-04: default the AGENT context to 8192 (not the model's
+          // 4096 default) so feeding a generated image back for vision feedback
+          // doesn't overflow ("request 5667 > available 4096" → HTTP 400 →
+          // "Agent error: Connection failed" after gemma's image). 8192 is within
+          // both installed models' real limits.
+          contextWindow: settings.contextWindowOverride || 8192,
           thinking: thinkOpt as unknown as boolean,
           signal: abort.signal,
         }
 
-        // Context compaction
-        const maxCtx = await getModelMaxTokens(activeModel)
+        // Context compaction — keep the trim target in sync with the 8192 num_ctx
+        // above so a generated image fed back for vision isn't trimmed right out.
+        const maxCtx = Math.max(await getModelMaxTokens(activeModel), settings.contextWindowOverride || 8192)
         agentMessages = compactMessages(
           agentMessages as OllamaChatMessage[],
           Math.floor(maxCtx * 0.8)
@@ -525,7 +559,7 @@ export function useAgentChat() {
             function: { name: t.name, description: t.description, parameters: t.inputSchema },
           }))
 
-          let turn: { content: string; toolCalls: ToolCall[]; thinking?: string }
+          let turn!: { content: string; toolCalls: ToolCall[]; thinking?: string }
           if (providerId === 'ollama') {
             // Streaming path — parity with desktop Codex. Without this
             // the user stared at a frozen chat for 30-90 s while Gemma
@@ -542,46 +576,24 @@ export function useAgentChat() {
                 removeBlock(convId!, assistantMessage.id, thinkingBlockId)
               }
             }
-            try {
-              turn = await streamOllamaChatWithTools(
-                modelToUse,
-                agentMessages,
-                tools,
-                {
-                  temperature: chatOptions.temperature,
-                  thinking: chatOptions.thinking,
-                  maxTokens: chatOptions.maxTokens,
-                  // Bug AA v2.5.0 — keep num_ctx override across the tool loop.
-                  contextWindow: chatOptions.contextWindow,
-                  signal: abort.signal,
-                },
-                (c) => {
-                  dropThinkingBlock()
-                  // Live-update the visible content. Same accumulator
-                  // pattern as Codex: each chunk is the FULL content so
-                  // far, not a delta — assign directly.
-                  contentRef.current = c
-                  scheduleUIUpdate()
-                },
-                (t) => {
-                  dropThinkingBlock()
-                  if (settings.thinkingEnabled === true) {
-                    thinkingRef.current = t
-                    scheduleUIUpdate()
-                  }
-                },
-              )
-            } catch (thinkErr: any) {
-              if (thinkErr?.message?.includes('does not support thinking') || thinkErr?.statusCode === 400) {
+            // Connection-failure retry (David 2026-06-04): right after a VRAM
+            // hand-off reloads the text model, the very next call can race the
+            // still-warming model and die as "Agent error: Connection failed"
+            // (seen on gemma4 after its image). Retry transient errors a couple
+            // times before surfacing. The inner branch still handles the
+            // does-not-support-thinking downgrade.
+            let connRetries = 0
+            for (;;) {
+              try {
                 turn = await streamOllamaChatWithTools(
                   modelToUse,
                   agentMessages,
                   tools,
                   {
                     temperature: chatOptions.temperature,
-                    thinking: undefined,
+                    thinking: chatOptions.thinking,
                     maxTokens: chatOptions.maxTokens,
-                    // Bug AA v2.5.0 — keep num_ctx override on the no-think retry too.
+                    // Bug AA v2.5.0 — keep num_ctx override across the tool loop.
                     contextWindow: chatOptions.contextWindow,
                     signal: abort.signal,
                   },
@@ -590,9 +602,47 @@ export function useAgentChat() {
                     contentRef.current = c
                     scheduleUIUpdate()
                   },
-                  () => {},
+                  (t) => {
+                    dropThinkingBlock()
+                    if (settings.thinkingEnabled === true) {
+                      thinkingRef.current = t
+                      scheduleUIUpdate()
+                    }
+                  },
                 )
-              } else {
+                break
+              } catch (thinkErr: any) {
+                if (thinkErr?.message?.includes('does not support thinking') || thinkErr?.statusCode === 400) {
+                  turn = await streamOllamaChatWithTools(
+                    modelToUse,
+                    agentMessages,
+                    tools,
+                    {
+                      temperature: chatOptions.temperature,
+                      thinking: undefined,
+                      maxTokens: chatOptions.maxTokens,
+                      contextWindow: chatOptions.contextWindow,
+                      signal: abort.signal,
+                    },
+                    (c) => {
+                      dropThinkingBlock()
+                      contentRef.current = c
+                      scheduleUIUpdate()
+                    },
+                    () => {},
+                  )
+                  break
+                }
+                // Retry ONLY transient failures. A 4xx (e.g. context overflow) is
+                // deterministic — retrying just repeats it, so let it surface.
+                const sc = typeof thinkErr?.statusCode === 'number' ? thinkErr.statusCode : 0
+                const transient = thinkErr?.name !== 'AbortError' && !(sc >= 400 && sc < 500)
+                if (transient && connRetries < 2) {
+                  connRetries++
+                  log.warn('agent.model_call_retry', { attempt: connRetries, err: String(thinkErr?.message || thinkErr) })
+                  await new Promise((r) => setTimeout(r, 1500 * connRetries))
+                  continue
+                }
                 throw thinkErr
               }
             }
@@ -698,7 +748,94 @@ export function useAgentChat() {
           }
         }
 
-        const isFinalTurn = toolCalls.length === 0
+        // Clean any tool-call text the model echoed into its prose (David
+        // 2026-06-04) — raw JSON like {"name":"image_generate",…} was leaking
+        // into the chat as a "notes"/JSON block. Runs even when a proper native
+        // call was emitted alongside the echo. Tool args/results stay in the
+        // agent's internal history; this only cleans the visible bubble.
+        turnContent = stripToolCallText(turnContent, knownToolNames)
+
+        // Over-loop guard: keep only the media the user asked for (once each) and
+        // drop any tool call that exactly repeats one already run this turn.
+        if (toolCalls.length > 0) {
+          let allowImg = maxImageGen - imageGenDone
+          let allowVid = maxVideoGen - videoGenDone
+          let blocked = false
+          const kept: ToolCall[] = []
+          for (const tc of toolCalls) {
+            const name = tc.function.name
+            if (name === 'image_generate') {
+              if (allowImg > 0) { allowImg--; kept.push(tc) } else { blocked = true }
+            } else if (name === 'video_generate') {
+              if (allowVid > 0) { allowVid--; kept.push(tc) } else { blocked = true }
+            } else if (executedCallKeys.has(callKey(tc))) {
+              blocked = true
+            } else {
+              kept.push(tc)
+            }
+          }
+          if (kept.length !== toolCalls.length) {
+            log.info('agent.over_loop_blocked', {
+              kept: kept.map((t) => t.function.name),
+              dropped: toolCalls.length - kept.length,
+            })
+          }
+          toolCalls = kept
+          // Everything filtered out → the requested work is already done. Steer
+          // the model to a short final reply ONCE; if it STILL only emits blocked
+          // calls, fall through to the empty-content summary and stop cleanly.
+          if (toolCalls.length === 0 && blocked) {
+            if (!mediaSteered) {
+              mediaSteered = true
+              if (turnContent.trim()) {
+                addBlock(convId!, assistantMessage.id, {
+                  id: uuid(), phase: 'reflection', content: turnContent, timestamp: Date.now(),
+                })
+              }
+              agentMessages.push({
+                role: 'user',
+                content:
+                  'Stop — the media you were asked for is already created and shown. Write ONLY a short, friendly closing line to the user in their own language (e.g. that their picture/clip is ready). Do not output JSON, do not repeat this note, and do not call any tool.',
+              } as ChatMessage)
+              continue
+            }
+            contentRef.current = turnContent
+            scheduleUIUpdate()
+            break
+          }
+        }
+
+        let isFinalTurn = toolCalls.length === 0
+        // Dud turn (David 2026-06-04): the model produced empty content + no tool
+        // call → the user used to see ONLY a thinking bubble, no answer.
+        if (isFinalTurn && !turnContent.trim() && executedCallKeys.size === 0) {
+          // 1st dud → retry once with thinking OFF (gemma4 dumps its whole
+          // response into the thinking channel and emits nothing usable).
+          if (!dudRetried && canThinkAgent && !forceNoThink) {
+            dudRetried = true
+            forceNoThink = true
+            log.info('agent.dud_turn_retry_no_think', { model: activeModel })
+            continue
+          }
+          // Still nothing AND the user clearly asked for media → a weak model
+          // (gemma4:e4b) often can't emit the tool call at all. Deliver what was
+          // asked by SYNTHESIZING the generation call from the user's prompt, so
+          // "mach mir ein bild von X" works even when the model flakes.
+          if (!mediaSynthesized &&
+              ((wantsImage && maxImageGen > 0 && imageGenDone === 0) ||
+               (wantsVideo && maxVideoGen > 0 && videoGenDone === 0))) {
+            mediaSynthesized = true
+            const useVideo = wantsVideo && maxVideoGen > 0 && videoGenDone === 0
+            toolCalls = [{
+              function: {
+                name: useVideo ? 'video_generate' : 'image_generate',
+                arguments: { prompt: extractMediaPrompt(userPromptText) },
+              },
+            }] as ToolCall[]
+            isFinalTurn = false
+            log.info('agent.media_fallback_synthesized', { tool: toolCalls[0].function.name })
+          }
+        }
         if (isFinalTurn) {
           contentRef.current = turnContent
           thinkingRef.current = turnThinking
@@ -826,6 +963,14 @@ export function useAgentChat() {
           const result = results.find((r) => r.id === entry.ac.id)
           if (!result) continue
           applyResultToToolCall(entry.ac, result)
+          // Over-loop accounting (David 2026-06-04): remember every executed call
+          // (so an identical repeat is skipped) and count successful media gens
+          // against the per-turn cap that stops "13× the same cat".
+          executedCallKeys.add(callKey(entry.tc))
+          if (result.status === 'completed' || result.status === 'cached') {
+            if (entry.ac.toolName === 'image_generate') imageGenDone++
+            else if (entry.ac.toolName === 'video_generate') videoGenDone++
+          }
           const contentLabel =
             result.status === 'completed'
               ? `Completed: ${entry.ac.toolName}`
@@ -868,6 +1013,18 @@ export function useAgentChat() {
           // failed
           return r.errorHint ? `${r.error ?? 'Tool failed'} — ${r.errorHint}` : (r.error ?? 'Tool failed')
         }
+        // After a successful image/video gen, nudge a NATURAL closing comment so
+        // the model doesn't silently loop another generation (David 2026-06-04).
+        // The media-cap is the hard stop; this makes the normal path end with a
+        // friendly sentence instead of a blocked-then-steered robotic one.
+        const mediaNote = (name: string, r: typeof results[number]): string => {
+          if ((r.status === 'completed' || r.status === 'cached') &&
+              (name === 'image_generate' || name === 'video_generate')) {
+            const kind = name === 'video_generate' ? 'video' : 'image'
+            return `\n\n(The ${kind} is now displayed to the user. Respond with a short, natural comment in the user's language. Do NOT generate another ${kind} unless the user explicitly asks.)`
+          }
+          return ''
+        }
 
         if (providerId === 'openai' || providerId === 'anthropic') {
           agentMessages.push({
@@ -879,7 +1036,7 @@ export function useAgentChat() {
             const result = results.find((r) => r.id === batch.find((b) => b.tc === tc)?.ac.id)!
             agentMessages.push({
               role: 'tool',
-              content: resultTextFor(result),
+              content: resultTextFor(result) + mediaNote(tc.function.name, result),
               tool_call_id: tc.id,
             })
           }
@@ -895,7 +1052,7 @@ export function useAgentChat() {
             const result = results.find((r) => r.id === batch.find((b) => b.tc === tc)?.ac.id)!
             agentMessages.push({
               role: 'tool',
-              content: resultTextFor(result),
+              content: resultTextFor(result) + mediaNote(tc.function.name, result),
             })
           }
         } else {
@@ -907,7 +1064,7 @@ export function useAgentChat() {
             })
             agentMessages.push({
               role: 'user',
-              content: buildHermesToolResult(tc.function.name, resultTextFor(result)),
+              content: buildHermesToolResult(tc.function.name, resultTextFor(result) + mediaNote(tc.function.name, result)),
             })
           }
         }
@@ -956,15 +1113,25 @@ export function useAgentChat() {
         )
         const writes = completedTools.filter((b) => b.toolCall?.toolName === 'file_write').length
         const reads = completedTools.filter((b) => b.toolCall?.toolName === 'file_read').length
-        const otherOk = completedTools.length - writes - reads
-        const parts: string[] = []
-        if (writes) parts.push(`${writes} file${writes === 1 ? '' : 's'} written`)
-        if (reads) parts.push(`${reads} file${reads === 1 ? '' : 's'} read`)
-        if (otherOk) parts.push(`${otherOk} operation${otherOk === 1 ? '' : 's'} completed`)
-        if (failedTools.length) parts.push(`${failedTools.length} failed`)
-        contentRef.current = parts.length
-          ? `Task completed: ${parts.join(', ')}.`
-          : 'Task completed.'
+        // Media-aware closing: if a picture/clip was produced, say so warmly
+        // instead of a robotic "1 operation completed" (David 2026-06-04).
+        if (imageGenDone > 0 || videoGenDone > 0) {
+          contentRef.current = imageGenDone > 0 && videoGenDone > 0
+            ? 'Fertig — dein Bild und dein Video sind oben. / Done — your image and video are above.'
+            : videoGenDone > 0
+              ? 'Fertig — dein Video ist oben. / Done — your video is above.'
+              : 'Fertig — dein Bild ist oben. / Done — your image is above.'
+        } else {
+          const otherOk = completedTools.length - writes - reads
+          const parts: string[] = []
+          if (writes) parts.push(`${writes} file${writes === 1 ? '' : 's'} written`)
+          if (reads) parts.push(`${reads} file${reads === 1 ? '' : 's'} read`)
+          if (otherOk) parts.push(`${otherOk} operation${otherOk === 1 ? '' : 's'} completed`)
+          if (failedTools.length) parts.push(`${failedTools.length} failed`)
+          contentRef.current = parts.length
+            ? `Task completed: ${parts.join(', ')}.`
+            : "I couldn't produce a response for that. Please rephrase, or turn off Think and send again."
+        }
       }
 
       // Final store update
@@ -1053,6 +1220,21 @@ export function useAgentChat() {
 }
 
 // ── Agent System Prompt Builder ─────────────────────────────────
+
+/**
+ * Turn a user request like "mach mir ein bild von einem hund" into a clean
+ * generation prompt ("einem hund") by stripping the leading command phrase
+ * (DE + EN). Used by the dud-turn media fallback when a weak model can't emit
+ * the tool call itself. Falls back to the full text if nothing strips.
+ */
+export function extractMediaPrompt(text: string): string {
+  const p = String(text || '').trim()
+  const stripped = p.replace(
+    /^(bitte\s+)?(mach(e|st)?|erstell(e)?|generier(e)?|zeichne|mal(e|en)?|create|make|draw|generate|gib\s+mir|show\s+me|zeig(e)?\s+mir)\s+(mir\s+)?(ein(e|en)?\s+)?(bild(er)?|foto|image|picture|pic|video|clip|grafik|illustration|animation)\s*(von|of|mit|with|from|über|about)?\s*/i,
+    '',
+  ).trim()
+  return stripped || p
+}
 
 function buildAgentSystemPrompt(basePrompt: string): string {
   const agentInstructions = `You are an autonomous AI agent inside Locally Uncensored with full access to this computer. You execute tasks end-to-end by using tools — you do NOT just describe what to do.
