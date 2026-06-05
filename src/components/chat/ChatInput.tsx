@@ -114,7 +114,7 @@ export function ChatInput({ onSend, onStop, isGenerating, pendingApproval, onApp
   }, [addFiles])
 
   return (
-    <div className="px-3 pb-2 pt-1">
+    <div className="px-3 pb-2 pt-1 w-full max-w-[70%] mx-auto">
       {/* Approval used to live here as a popup over the chat input.
           Per user feedback ("eventuell in den chat einarbeiten") it now
           renders INSIDE the pending tool-call block in MessageList, so
@@ -122,7 +122,7 @@ export function ChatInput({ onSend, onStop, isGenerating, pendingApproval, onApp
           they belong to. ChatView owns the Enter/Esc keyboard layer. */}
 
       <div
-        className={`flex flex-col rounded-lg border px-2.5 py-2 transition-colors ${
+        className={`flex flex-col rounded-lg border px-2.5 py-1 transition-colors ${
           isDragOver
             ? 'bg-blue-500/5 border-blue-500/30'
             : 'bg-gray-50 dark:bg-white/[0.03] border-gray-200 dark:border-white/[0.06]'

@@ -204,10 +204,10 @@ export function Sidebar() {
     <AnimatePresence>
       {sidebarOpen && (
         <motion.aside
-          className="w-56 h-full rounded-xl bg-white dark:bg-[#1e1e1e] ring-1 ring-black/[0.04] dark:ring-white/[0.05] flex flex-col z-20 overflow-hidden"
+          className="w-[200px] h-full rounded-xl bg-white dark:bg-[#1e1e1e] ring-1 ring-black/[0.04] dark:ring-white/[0.05] flex flex-col z-20 overflow-hidden"
           style={{ zoom: 1.25 }}
           initial={{ width: 0, opacity: 0 }}
-          animate={{ width: 224, opacity: 1 }}
+          animate={{ width: 200, opacity: 1 }}
           exit={{ width: 0, opacity: 0 }}
           transition={{ duration: 0.15 }}
         >
@@ -383,7 +383,7 @@ export function Sidebar() {
             {filtered.map((conv) => (
               <div
                 key={conv.id}
-                className={`group flex items-center gap-1.5 px-2 py-1.5 rounded-md cursor-pointer transition-all ${
+                className={`group flex items-center gap-1.5 px-2 py-1 rounded-md cursor-pointer transition-all ${
                   conv.id === activeConversationId
                     ? 'bg-gray-200 dark:bg-white/[0.06] text-gray-900 dark:text-white'
                     : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/[0.03] hover:text-gray-800 dark:hover:text-gray-200'
@@ -408,15 +408,13 @@ export function Sidebar() {
                       <button onClick={(e) => { e.stopPropagation(); setEditingId(null) }} className="text-gray-500"><X size={11} /></button>
                     </div>
                   ) : (
-                    <>
-                      <div className="flex items-center gap-1">
-                        {isRemoteMode && conv.id === dispatchedConversationId && remoteEnabled && (
-                          <span className="w-1.5 h-1.5 rounded-full bg-green-400 shrink-0" />
-                        )}
-                        <p className="text-[0.68rem] truncate">{truncate(conv.title, 28)}</p>
-                      </div>
-                      <p className="text-[0.55rem] text-gray-600">{formatDate(conv.updatedAt)}</p>
-                    </>
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      {isRemoteMode && conv.id === dispatchedConversationId && remoteEnabled && (
+                        <span className="w-1.5 h-1.5 rounded-full bg-green-400 shrink-0" />
+                      )}
+                      <p className="text-[0.66rem] truncate flex-1 min-w-0">{truncate(conv.title, 30)}</p>
+                      <span className="text-[0.5rem] text-gray-600 shrink-0">{formatDate(conv.updatedAt)}</span>
+                    </div>
                   )}
                 </div>
                 {editingId !== conv.id && (

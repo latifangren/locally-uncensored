@@ -582,7 +582,7 @@ export function DiscoverModels({ category }: Props) {
   }
 
   return (
-    <div className="space-y-4 scale-[0.87] origin-top-left w-[115%]">
+    <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold text-gray-900 dark:text-white">{title}</h2>
         {isText && (
@@ -593,22 +593,6 @@ export function DiscoverModels({ category }: Props) {
       </div>
 
       <p className="text-sm text-gray-500">{subtitle}</p>
-
-      {/* Always-visible "your own model" call-out for text. Discord users
-          repeatedly asked for a way to install their own GGUFs / HF models,
-          unaware the search bar already does it (booster.netv2, #general).
-          Spelling out what the search bar accepts moves it from "feature
-          you have to discover" to "feature you can't miss." */}
-      {isText && (
-        <div className={`flex items-start gap-2.5 p-2.5 rounded-lg border ${
-          'bg-blue-50 dark:bg-blue-500/[0.08] border-blue-200 dark:border-blue-500/20 text-blue-900 dark:text-blue-200'
-        }`}>
-          <Search size={14} className="mt-0.5 shrink-0" />
-          <div className="text-[0.65rem] leading-relaxed">
-            <strong>Looking for your own model?</strong> Search any HuggingFace GGUF below — paste a repo name like <code className="font-mono px-1 rounded bg-white/30 dark:bg-white/10">bartowski/Llama-3.1-8B-Instruct-GGUF</code> or a keyword like "qwen 14b". Hit Enter and pick a quant.
-          </div>
-        </div>
-      )}
 
       <div className="relative">
         <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
@@ -695,7 +679,7 @@ export function DiscoverModels({ category }: Props) {
 
       {/* Model Bundles (Image + Video) — same grid style as text models */}
       {(isImage || isVideo) && filteredBundles.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-2">
           {filteredBundles.map((bundle, bi) => {
             const complete = isBundleComplete(bundle)
             const downloading = isBundleDownloading(bundle) || installingBundle === bundle.name
@@ -875,7 +859,7 @@ export function DiscoverModels({ category }: Props) {
       ) : isText ? (
         <>
           {subTab === 'uncensored' && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-2">
               {filteredUncensored.map((model, i) => (
                 <ModelDiscoverCard key={model.name} model={model} index={i} isText={isText} getModelDownloadState={getModelDownloadState} isModelFullyInstalled={isModelFullyInstalled} handleDownload={handleTextDownload} />
               ))}
@@ -885,7 +869,7 @@ export function DiscoverModels({ category }: Props) {
             </div>
           )}
           {subTab === 'mainstream' && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-2">
               {filteredMainstream.map((model, i) => (
                 <ModelDiscoverCard key={model.name} model={model} index={i} isText={isText} getModelDownloadState={getModelDownloadState} isModelFullyInstalled={isModelFullyInstalled} handleDownload={handleTextDownload} />
               ))}
@@ -899,7 +883,7 @@ export function DiscoverModels({ category }: Props) {
           {hfSearchResults.length > 0 && (
             <div className="space-y-3 mt-6">
               <h3 className="text-[0.7rem] font-semibold text-gray-500 uppercase tracking-wider">HuggingFace Search Results</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-2">
                 {hfSearchResults.map((model, i) => (
                   <ModelDiscoverCard key={model.name + i} model={model} index={i} isText={isText} getModelDownloadState={getModelDownloadState} isModelFullyInstalled={isModelFullyInstalled} handleDownload={handleTextDownload} />
                 ))}
