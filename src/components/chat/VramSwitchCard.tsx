@@ -63,7 +63,7 @@ export function VramSwitchCard() {
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -4 }}
           transition={{ duration: 0.15 }}
-          className="flex items-start gap-2 px-2.5 py-1.5 rounded-md border border-indigo-400/25 bg-indigo-500/[0.07] dark:bg-indigo-500/10 text-[0.65rem] text-indigo-700 dark:text-indigo-200"
+          className="flex items-start gap-2 px-2.5 py-1.5 rounded-md border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/[0.05] text-[0.65rem] text-gray-700 dark:text-gray-200"
         >
           <span className="mt-0.5 shrink-0">
             {done ? <Check size={12} className="text-emerald-500" /> : <Loader2 size={12} className="animate-spin" />}

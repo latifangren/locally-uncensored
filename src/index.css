@@ -3,104 +3,24 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 /* ─────────────────────────────────────────────────────────────────────
-   v2.5.0 Design-Polish — token layer (DD)
-   Strategy: redefine the palette at the root so every existing utility
-   (bg-/text-/border-/ring-/from-/hover:/dark:) inherits the new look
-   without touching 300+ component call-sites.
-   - ONE accent: the whole cool-accent family (blue/indigo/violet/purple/
-     sky/cyan) collapses to a single muted violet → primary actions only.
-   - Semantics kept: green/emerald stay green for success/status, just
-     desaturated so they read "calm" instead of "neon toy".
-   - Neutral ramp: spread wider than the flat #161616 base for real depth.
+   Visual layer aligned with the uselu web companion (DD 2026-06-05)
+   The previous build collapsed the whole cool-accent family
+   (blue/indigo/violet/purple/sky/cyan) onto ONE muted-violet ramp via a
+   @theme override, which tinted the entire app lilac. The web companion
+   keeps Tailwind's DEFAULT palette + neutral greys and only uses a few
+   deliberate purple accents. To match it we drop the colour-family override
+   entirely (Tailwind defaults return: blue is blue, green is green, the
+   sparse purple accents render as real purple, same classes the web uses)
+   and keep only the neutral ramp + structural radius/shadow tokens, which
+   carry no colour identity.
    ───────────────────────────────────────────────────────────────────── */
 @theme {
-  /* ── Accent → muted violet ──────────────────────────────────────────
-     The whole cool-accent family (blue/indigo/purple/violet/sky/cyan)
-     collapses to ONE violet ramp. Full 50→900 so badges, hovers and
-     dark/light tints all stay on-brand instead of a few stray blues. */
-  --color-violet-50:  #f4f1fe;
-  --color-violet-100: #e9e3fc;
-  --color-violet-200: #d6cbf8;
-  --color-violet-300: #cabef5;
-  --color-violet-400: #c2b2f3;
-  --color-violet-500: #a094f8;
-  --color-violet-600: #8974dd;
-  --color-violet-700: #7462bd;
-  --color-violet-800: #5847a1;
-  --color-violet-900: #44377d;
-
-  --color-purple-50:  #f4f1fe;
-  --color-purple-100: #e9e3fc;
-  --color-purple-200: #d6cbf8;
-  --color-purple-300: #cabef5;
-  --color-purple-400: #c2b2f3;
-  --color-purple-500: #a094f8;
-  --color-purple-600: #8974dd;
-  --color-purple-700: #7462bd;
-  --color-purple-800: #5847a1;
-  --color-purple-900: #44377d;
-
-  --color-indigo-50:  #f4f1fe;
-  --color-indigo-100: #e9e3fc;
-  --color-indigo-200: #d6cbf8;
-  --color-indigo-300: #cabef5;
-  --color-indigo-400: #c2b2f3;
-  --color-indigo-500: #a094f8;
-  --color-indigo-600: #8974dd;
-  --color-indigo-700: #7462bd;
-  --color-indigo-800: #5847a1;
-  --color-indigo-900: #44377d;
-
-  --color-blue-50:  #f4f1fe;
-  --color-blue-100: #e9e3fc;
-  --color-blue-200: #d6cbf8;
-  --color-blue-300: #cabef5;
-  --color-blue-400: #c2b2f3;
-  --color-blue-500: #a094f8;
-  --color-blue-600: #8974dd;
-  --color-blue-700: #7462bd;
-  --color-blue-800: #5847a1;
-  --color-blue-900: #44377d;
-
-  --color-sky-300: #cabef5;
-  --color-sky-400: #c2b2f3;
-  --color-sky-500: #a094f8;
-  --color-sky-600: #8974dd;
-
-  --color-cyan-300: #cabef5;
-  --color-cyan-400: #c2b2f3;
-  --color-cyan-500: #a094f8;
-  --color-cyan-600: #8974dd;
-
-  /* ── Success / status → desaturated green (semantics preserved) ──
-     Stays unmistakably green for online/success/checkmarks, just calmed
-     down from neon #22c55e so it reads "instrument", not "toy". */
-  --color-green-50:  #eef7f2;
-  --color-green-100: #d8ede1;
-  --color-green-200: #b3dcc6;
-  --color-green-300: #8ccba8;
-  --color-green-400: #6fc096;
-  --color-green-500: #54a87b;
-  --color-green-600: #428a63;
-  --color-green-700: #356f50;
-  --color-green-800: #2a5840;
-  --color-green-900: #1f4030;
-
-  --color-emerald-50:  #eef7f2;
-  --color-emerald-100: #d8ede1;
-  --color-emerald-200: #b3dcc6;
-  --color-emerald-300: #8ccba8;
-  --color-emerald-400: #6fc096;
-  --color-emerald-500: #54a87b;
-  --color-emerald-600: #428a63;
-  --color-emerald-700: #356f50;
-  --color-emerald-800: #2a5840;
-  --color-emerald-900: #1f4030;
-
-  /* ── Neutral ramp — spread for depth (uselu base, widened) ── */
+  /* ── Neutral ramp — spread for depth (uselu base, widened). Used by the
+     elevated-surface helper below; the canvas/sidebar/header shades live as
+     literals in the layout components. ── */
   --color-lu-base: #202020;     /* app canvas */
-  --color-lu-panel: #262626;    /* sidebar, panels (= uselu base) */
-  --color-lu-raised: #2d2d2d;   /* cards, hover (= uselu elevated) */
+  --color-lu-panel: #262626;    /* sidebar, panels */
+  --color-lu-raised: #2d2d2d;   /* cards, hover */
   --color-lu-overlay: #363636;  /* dropdowns, modals, popovers */
 
   /* ── Form: moderately less round (pills/cards read less "toy") ── */
@@ -134,23 +54,25 @@ body {
   height: 100vh;
 }
 
-/* Glass card — v2.5.0 polish: was "near-invisible" (border-bottom only),
-   now a real raised surface so panels read as built objects with depth
-   instead of a flat mockup. */
+/* Glass card — aligned with the web companion: near-invisible (a single
+   hairline divider, no filled surface) so panels read as light structure
+   instead of stacked cards. */
 .light .glass-card {
-  background: rgba(0, 0, 0, 0.02);
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  border-radius: 0.625rem;
-  padding: 0.75rem 0.875rem;
-  margin-bottom: 0.5rem;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 0;
+  padding-bottom: 0.75rem;
+  margin-bottom: 0.25rem;
 }
 
 .dark .glass-card {
-  background: rgba(255, 255, 255, 0.025);
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  border-radius: 0.625rem;
-  padding: 0.75rem 0.875rem;
-  margin-bottom: 0.5rem;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  border-radius: 0;
+  padding-bottom: 0.75rem;
+  margin-bottom: 0.25rem;
 }
 
 /* Custom scrollbar */
@@ -212,7 +134,10 @@ body {
   background: rgba(255, 255, 255, 0.12);
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--color-violet-500);
+  background: rgba(0, 0, 0, 0.30);
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.22);
 }
 ::-webkit-scrollbar-button,
 ::-webkit-scrollbar-button:start,
@@ -298,15 +223,14 @@ input[type="range"]::-webkit-slider-thumb {
   -webkit-app-region: no-drag;
 }
 
-/* Selection — tinted to the violet accent */
+/* Selection — neutral grey (web companion), no accent tint */
 ::selection {
-  background: rgba(160, 148, 248, 0.28);
+  background: rgba(100, 100, 100, 0.3);
 }
 
 /* ─────────────────────────────────────────────────────────────────────
-   v2.5.0 Design-Polish — HUD layer (ported from uselu web app)
-   Gives the desktop the same "alive / tech instrument" character the
-   web companion already has, and keeps the two visually consistent.
+   HUD layer — kept from the web companion. Gives the desktop the same
+   "alive / tech instrument" character and keeps the two visually consistent.
    ───────────────────────────────────────────────────────────────────── */
 
 /* Faint vertical scan-grid over the app canvas — barely-there texture so
@@ -332,12 +256,12 @@ input[type="range"]::-webkit-slider-thumb {
   background-repeat: repeat-y;
 }
 
-/* Refined focus ring — thin, violet, replaces the browser default blue.
-   Limited to clickable elements; inputs/textcareas get their focus
-   affordance from their own border-color change (adding an outline there
-   reads as a doubled "Windows accent ring"). */
+/* Refined focus ring — thin, neutral blue (web companion), replaces the
+   browser default. Limited to clickable elements; inputs/textareas get their
+   focus affordance from their own border-color change (adding an outline
+   there reads as a doubled "Windows accent ring"). */
 :is(button, a):focus-visible {
-  outline: 1px solid rgba(160, 148, 248, 0.6);
+  outline: 1px solid rgba(96, 165, 250, 0.6);
   outline-offset: 1px;
 }
 :is(input, textarea, select):focus-visible {
@@ -364,3 +288,77 @@ input[type="range"]::-webkit-slider-thumb {
   border: 1px solid rgba(0, 0, 0, 0.1);
   box-shadow: var(--shadow-lg);
 }
+
+/* ─────────────────────────────────────────────────────────────────────
+   Theme-contrast rescue layer — ported from the web companion.
+   Many components were authored dark-first and use raw `text-gray-300/400`,
+   `text-white`, `bg-white/N`, `border-white/N` without a `dark:` variant.
+   On the darker #1a1a1a base those dim greys nearly vanish; in light mode the
+   dark-first whites/white-tints disappear on white. We remap them theme-
+   conditionally so the 300+ component call-sites don't each need touching.
+   Specificity: `.light .x` / `.dark .x` (0,2,0) beats the plain utility (0,1,0).
+   (The web scopes these to `.lu-app-scaled`; the desktop has no landing page,
+   so a plain theme-root scope is equivalent and simpler.)
+   ───────────────────────────────────────────────────────────────────── */
+
+/* Light mode: too-dim greys turn invisible on white. Darken them. */
+.light .text-gray-300 { color: rgb(75 85 99); }   /* → gray-600 */
+.light .text-gray-400 { color: rgb(55 65 81); }   /* → gray-700 */
+.light .text-gray-500 { color: rgb(55 65 81); }   /* → gray-700 — same so 500 isn't dimmer than 400 */
+.light .text-gray-600 { color: rgb(31 41 55); }   /* → gray-800 */
+
+/* Dark mode (#1a1a1a bg): too-dim greys turn invisible. Bump them up. */
+.dark .text-gray-700 { color: rgb(107 114 128); } /* → gray-500 */
+.dark .text-gray-600 { color: rgb(156 163 175); } /* → gray-400 */
+.dark .text-gray-500 { color: rgb(156 163 175); } /* → gray-400 — same as 600 so weight is consistent */
+
+/* Placeholders — Tailwind doesn't add a `dark:` for these. */
+.light ::placeholder { color: rgb(31 41 55); }     /* gray-800 */
+.dark ::placeholder { color: rgb(229 231 235); }   /* gray-200 */
+
+/* Light-mode rescue for legacy dark-first components that bake in
+   `text-white` / `bg-white/N` / `border-white/N` without a `dark:` variant.
+   Re-map them to dark-on-light equivalents so modals/tutorials stay legible.
+   Tailwind escapes the slash ("/" → "\/") and brackets ("[" → "\["), so the
+   selectors below need backslashes to match. */
+.light .text-white { color: rgb(17 24 39); }                /* gray-900 */
+.light .hover\:text-white:hover { color: rgb(17 24 39); }
+
+.light .bg-white\/5  { background-color: rgba(0, 0, 0, 0.04); }
+.light .bg-white\/8  { background-color: rgba(0, 0, 0, 0.05); }
+.light .bg-white\/10 { background-color: rgba(0, 0, 0, 0.06); }
+.light .bg-white\/12 { background-color: rgba(0, 0, 0, 0.07); }
+.light .bg-white\/15 { background-color: rgba(0, 0, 0, 0.08); }
+.light .bg-white\/20 { background-color: rgba(0, 0, 0, 0.10); }
+.light .bg-white\/\[0\.03\] { background-color: rgba(0, 0, 0, 0.03); }
+.light .bg-white\/\[0\.05\] { background-color: rgba(0, 0, 0, 0.04); }
+.light .bg-white\/\[0\.06\] { background-color: rgba(0, 0, 0, 0.05); }
+.light .bg-white\/\[0\.08\] { background-color: rgba(0, 0, 0, 0.06); }
+
+.light .hover\:bg-white\/5:hover  { background-color: rgba(0, 0, 0, 0.04); }
+.light .hover\:bg-white\/8:hover  { background-color: rgba(0, 0, 0, 0.06); }
+.light .hover\:bg-white\/10:hover { background-color: rgba(0, 0, 0, 0.07); }
+.light .hover\:bg-white\/12:hover { background-color: rgba(0, 0, 0, 0.08); }
+.light .hover\:bg-white\/15:hover { background-color: rgba(0, 0, 0, 0.09); }
+.light .hover\:bg-white\/20:hover { background-color: rgba(0, 0, 0, 0.10); }
+
+.light .border-white\/5  { border-color: rgba(0, 0, 0, 0.06); }
+.light .border-white\/8  { border-color: rgba(0, 0, 0, 0.08); }
+.light .border-white\/10 { border-color: rgba(0, 0, 0, 0.10); }
+.light .border-white\/15 { border-color: rgba(0, 0, 0, 0.12); }
+.light .border-white\/20 { border-color: rgba(0, 0, 0, 0.15); }
+.light .border-white\/25 { border-color: rgba(0, 0, 0, 0.18); }
+.light .border-white\/\[0\.04\] { border-color: rgba(0, 0, 0, 0.06); }
+.light .border-white\/\[0\.06\] { border-color: rgba(0, 0, 0, 0.08); }
+.light .border-white\/\[0\.08\] { border-color: rgba(0, 0, 0, 0.10); }
+.light .border-white\/\[0\.1\] { border-color: rgba(0, 0, 0, 0.12); }
+
+.light .hover\:border-white\/15:hover { border-color: rgba(0, 0, 0, 0.12); }
+.light .hover\:border-white\/20:hover { border-color: rgba(0, 0, 0, 0.15); }
+.light .hover\:border-white\/25:hover { border-color: rgba(0, 0, 0, 0.18); }
+
+.light .focus\:border-white\/20:focus { border-color: rgba(0, 0, 0, 0.20); }
+.light .focus\:border-white\/25:focus { border-color: rgba(0, 0, 0, 0.22); }
+
+.light .placeholder-gray-500::placeholder,
+.light .placeholder-gray-600::placeholder { color: rgb(75 85 99); }

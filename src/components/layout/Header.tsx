@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Menu, Loader2, Power, Sun, Moon, RefreshCw, X } from 'lucide-react'
+import { Menu, Loader2, Sun, Moon, RefreshCw, X } from 'lucide-react'
 import { useUIStore } from '../../stores/uiStore'
 import { useSettingsStore } from '../../stores/settingsStore'
 import { useChatStore } from '../../stores/chatStore'
@@ -9,7 +9,7 @@ import { ModelSelector } from '../models/ModelSelector'
 import { UpdateBadge } from './UpdateBadge'
 import { DownloadBadge } from './DownloadBadge'
 import { CreateTopControls } from '../create/CreateTopControls'
-import { loadModel, unloadModel, listRunningModels } from '../../api/ollama'
+import { loadModel } from '../../api/ollama'
 import { getProviderIdFromModel } from '../../api/providers'
 import { ModelLoadError } from '../../lib/ollama-errors'
 import { useModels } from '../../hooks/useModels'
@@ -22,7 +22,6 @@ export function Header() {
   const isComparing = useCompareStore((s) => s.isComparing)
   const activeModel = useModelStore((s) => s.activeModel)
   const [loadingState, setLoadingState] = useState<'idle' | 'loading' | 'unloading'>('idle')
-  const [isModelLoaded, setIsModelLoaded] = useState(false)
   // Stale-manifest notice shown next to the Lichtschalter when Ollama rejects
   // the model with "does not support (chat|completion|generate)". Offers a
   // one-click refresh that re-pulls the model (progress tracked in DownloadBadge).
@@ -51,7 +50,6 @@ export function Header() {
     setLoadingState('loading')
     try {
       await loadModel(modelToUse)
-      setIsModelLoaded(true)
       // If the store still thinks this model is stale (e.g. a scan ran before
       // the user re-pulled externally), clear it.
       markHealthFresh(modelToUse)
@@ -59,21 +57,6 @@ export function Header() {
       // Bug C (v2.4.5 — Anson192 GH #39): missing-blob errors get the same
       // one-click repair path as stale-manifest — `ollama pull <name>`
       // re-fetches missing blobs just like it refreshes stale manifests.
-      if (e instanceof ModelLoadError && (e.kind === 'stale-manifest' || e.kind === 'missing-blob')) {
-        setStaleError({ model: e.model, message: e.message })
-        syncStaleToStore(e.model)
-      }
-    }
-    finally { setLoadingState('idle') }
-  }
-
-  const handleUnload = async () => {
-    if (!modelToUse || loadingState !== 'idle') return
-    setLoadingState('unloading')
-    try {
-      await unloadModel(modelToUse)
-      setIsModelLoaded(false)
-    } catch (e) {
       if (e instanceof ModelLoadError && (e.kind === 'stale-manifest' || e.kind === 'missing-blob')) {
         setStaleError({ model: e.model, message: e.message })
         syncStaleToStore(e.model)
@@ -131,30 +114,6 @@ export function Header() {
     }
   }, [modelToUse, isOllamaModel, healthStaleModels, staleError])
 
-  // Check loaded state when model changes
-  useEffect(() => {
-    if (modelToUse && isOllamaModel) {
-      listRunningModels().then(running => {
-        setIsModelLoaded(running.some(r => r.includes(modelToUse.split(':')[0])))
-      })
-    } else {
-      setIsModelLoaded(false)
-    }
-  }, [modelToUse, isOllamaModel])
-
-  // Poll running state every 5s while idle
-  useEffect(() => {
-    if (!modelToUse || !isOllamaModel) return
-    const interval = setInterval(() => {
-      if (loadingState === 'idle') {
-        listRunningModels().then(running => {
-          setIsModelLoaded(running.some(r => r.includes(modelToUse.split(':')[0])))
-        })
-      }
-    }, 5000)
-    return () => clearInterval(interval)
-  }, [modelToUse, isOllamaModel, loadingState])
-
   const toggleTheme = () => {
     updateSettings({ theme: settings.theme === 'dark' ? 'light' : 'dark' })
   }
@@ -176,7 +135,7 @@ export function Header() {
   )
 
   return (
-    <header className="h-10 flex items-center justify-between px-3 border-b border-gray-200 dark:border-white/[0.06] bg-gray-50 dark:bg-[#262626] z-20">
+    <header className="relative h-10 flex items-center justify-between px-3 border-b border-gray-200 dark:border-white/[0.04] bg-gray-50 dark:bg-[#212121] z-20">
       {/* Left: Sidebar + Logo */}
       <div className="flex items-center gap-2">
         <button
@@ -192,82 +151,27 @@ export function Header() {
             useCompareStore.getState().setComparing(false)
             setView('chat')
           }}
-          className="flex items-center shrink-0 transition"
-          title="LU Studio"
+          className="flex items-center shrink-0 text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition"
+          aria-label="Locally Uncensored"
         >
-          {/* Brand wordmark in the top panel (David 2026-06-02): no logo here
-              (the big mark was too large) — just "LU Studio". The logo itself
-              lives in the titlebar above. */}
-          <span className="text-sm font-semibold tracking-tight">
-            <span className="text-violet-500">LU</span>{' '}
-            <span className="text-gray-700 dark:text-gray-200">Studio</span>
-          </span>
+          {/* Top-panel brand mark: the black/white monogram only (no wordmark),
+              inverted per theme. Matches the web companion. */}
+          <img src="/LU-monogram-bw.png" alt="" width={33} height={33} className="dark:invert-0 invert opacity-80" />
         </button>
       </div>
 
-      {/* Center: contextual controls.
-          - Chat views → chat model picker + Ollama Lichtschalter
-          - Create view → Image/Video mode switch + ComfyUI model picker + ComfyUI Lichtschalter
-          Both layouts follow the same visual pattern so the user has a
-          single familiar control surface. */}
-      <div className="flex items-center gap-1">
+      {/* Center: model picker, geometrically centered between the logo (left)
+          and the utilities (right). The per-row Lichtschalter that used to
+          live here has moved INTO the dropdown — each model row in
+          `ModelSelector` has its own load/unload toggle next to the name. */}
+      <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-1">
         {currentView === 'create' ? (
           <CreateTopControls />
         ) : (
           <>
         <ModelSelector />
-        {isOllamaModel && (
-          (() => {
-            const busy = loadingState !== 'idle' || isRefreshing
-            const hasStale = !!staleError
-            const onClick = () => {
-              if (busy) return
-              if (hasStale) return   // user uses the Refresh chip instead
-              if (isModelLoaded) handleUnload()
-              else handleLoad()
-            }
-            const title = busy
-              ? (isRefreshing ? 'Refreshing model…' : loadingState === 'loading' ? 'Loading model…' : 'Unloading model…')
-              : hasStale
-                ? `Model "${staleError!.model}" has a stale manifest — click Refresh`
-                : (isModelLoaded ? 'Model loaded — click to unload' : 'Model not loaded — click to load into VRAM')
-            return (
-              <button
-                onClick={onClick}
-                disabled={busy || hasStale}
-                title={title}
-                aria-label={title}
-                className={`relative flex items-center h-[18px] w-[34px] rounded-full transition-colors duration-200 ${
-                  busy
-                    ? 'bg-amber-500/25 border border-amber-400/40'
-                    : hasStale
-                      ? 'bg-red-500/30 border border-red-400/60 animate-pulse'
-                      : isModelLoaded
-                        ? 'bg-green-500/25 border border-green-400/50'
-                        : 'bg-gray-200 dark:bg-white/10 border border-gray-300 dark:border-white/15 hover:bg-gray-300 dark:hover:bg-white/15'
-                }`}
-              >
-                <span
-                  className={`absolute top-[1px] flex items-center justify-center w-[14px] h-[14px] rounded-full shadow-sm transition-all duration-200 ${
-                    busy
-                      ? 'left-[9px] bg-amber-400'
-                      : hasStale
-                        ? 'left-[1px] bg-red-500'
-                        : isModelLoaded
-                          ? 'left-[18px] bg-green-400'
-                          : 'left-[1px] bg-gray-400 dark:bg-gray-500'
-                  }`}
-                >
-                  {busy ? (
-                    <Loader2 size={9} className="animate-spin text-gray-900" />
-                  ) : (
-                    <Power size={9} className="text-gray-900" />
-                  )}
-                </span>
-              </button>
-            )
-          })()
-        )}
+        {/* Lichtschalter (load/unload into VRAM) now lives per-row inside the
+            ModelSelector dropdown — the header center stays just the picker. */}
         {isOllamaModel && staleError && (
           <div
             className="ml-1.5 flex items-center gap-1 px-1.5 py-[2px] rounded-md bg-amber-500/10 border border-amber-400/30 text-[0.6rem]"

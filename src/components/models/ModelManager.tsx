@@ -163,7 +163,7 @@ export function ModelManager() {
                 : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-white'
             }`}
           >
-            Discover LUncensored
+            Discover
           </button>
         </div>
 

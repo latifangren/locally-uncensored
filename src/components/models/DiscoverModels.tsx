@@ -485,7 +485,7 @@ export function DiscoverModels({ category }: Props) {
   const filteredUncensored = uncensoredModels.filter(m => matchesSearch(m) && matchesVramTier(m.sizeGB))
   const filteredMainstream = mainstreamModels.filter(m => matchesSearch(m) && matchesVramTier(m.sizeGB))
 
-  const title = 'Discover LUncensored'
+  const title = 'Discover'
   const subtitle = isText
     ? `Download GGUF models from HuggingFace.${hfModelPath ? ` Saves to: ${hfModelPath}` : ''}`
     : isImage
