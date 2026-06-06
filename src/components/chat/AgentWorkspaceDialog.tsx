@@ -67,12 +67,15 @@ export function AgentWorkspaceDialog({
     setPicking(true)
     setError(null)
     try {
-      const res = await backendCall<{ path?: string } | null>('pick_folder', {})
-      if (res && res.path) {
+      // pick_folder returns the chosen path as a STRING (or null on cancel) —
+      // NOT an object. Reading res.path here was the real bug: it was always
+      // undefined, so onChoose never fired and the dialog never closed.
+      const res = await backendCall<string | null>('pick_folder', {})
+      if (res) {
         // Commit + close right after the folder is chosen. Picking IS the
         // decision — the dialog must go away (David 2026-06-06). Multi-repo
         // extras / remember-as-default are managed later via the badge.
-        onChoose({ kind: 'folder', path: res.path, extraPaths: [] })
+        onChoose({ kind: 'folder', path: res, extraPaths: [] })
         return
       }
     } catch (e) {
@@ -88,16 +91,17 @@ export function AgentWorkspaceDialog({
     setPicking(true)
     setError(null)
     try {
-      const res = await backendCall<{ path?: string } | null>('pick_folder', {})
-      if (!res || !res.path) {
+      // pick_folder returns the path as a STRING (or null), not an object.
+      const res = await backendCall<string | null>('pick_folder', {})
+      if (!res) {
         setPicking(false)
         return
       }
       setDraft((d) => {
         if (!d || d.kind !== 'folder') return d
         const extras = d.extraPaths ?? []
-        if (extras.includes(res.path!) || res.path === d.path) return d
-        return { ...d, extraPaths: [...extras, res.path!] }
+        if (extras.includes(res) || res === d.path) return d
+        return { ...d, extraPaths: [...extras, res] }
       })
     } catch (e) {
       setError(
