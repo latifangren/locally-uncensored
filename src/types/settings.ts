@@ -133,6 +133,13 @@ export interface Settings {
    * falling back to the per-thread cwd.
    */
   defaultWorkspace: AgentWorkspace | null
+  /**
+   * User profile picture as a base64 data URL (downscaled to ≤256px PNG on
+   * upload so it stays small in persisted state). Empty string = show the
+   * default user icon. Rendered next to the user's chat / code / agent
+   * messages. The AI's avatar is always the LU monogram (not user-settable).
+   */
+  userAvatarDataUrl: string
 }
 
 export interface Persona {

@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion'
-import { User, Bot, Copy, Check, Pencil, RefreshCw, X, Wrench } from 'lucide-react'
+import { User, Copy, Check, Pencil, RefreshCw, X, Wrench } from 'lucide-react'
 import { useState, useRef, useEffect, useMemo } from 'react'
 import { MarkdownRenderer } from './MarkdownRenderer'
 import { ThinkingBlock } from './ThinkingBlock'
@@ -11,6 +11,7 @@ import type { Message } from '../../types/chat'
 import { useAgentModeStore } from '../../stores/agentModeStore'
 import { useChatStore } from '../../stores/chatStore'
 import { useModelStore } from '../../stores/modelStore'
+import { useSettingsStore } from '../../stores/settingsStore'
 import { extractToolCallsFromContent } from '../../lib/tool-call-repair'
 import { isAgentCompatible } from '../../lib/model-compatibility'
 
@@ -46,6 +47,7 @@ export function MessageBubble({ message, onRegenerate, onEdit, pendingApprovalId
   )
   const activeModel = useModelStore((s) => s.activeModel)
   const toggleAgentMode = useAgentModeStore((s) => s.toggleAgentMode)
+  const userAvatarDataUrl = useSettingsStore((s) => s.settings.userAvatarDataUrl)
 
   const suggestAgent = useMemo(() => {
     if (isUser || isAgentActive || !activeConversationId || !activeModel) return false
@@ -101,13 +103,20 @@ export function MessageBubble({ message, onRegenerate, onEdit, pendingApprovalId
       {/* Avatar */}
       <div
         className={
-          'w-6 h-6 rounded-md flex items-center justify-center shrink-0 ' +
+          'w-6 h-6 rounded-md overflow-hidden flex items-center justify-center shrink-0 ' +
           (isUser
             ? 'bg-gray-100 dark:bg-white/8 border border-gray-200 dark:border-white/10'
             : 'bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/[0.06]')
         }
       >
-        {isUser ? <User size={11} className="text-gray-400" /> : <Bot size={11} className="text-gray-500" />}
+        {isUser ? (
+          userAvatarDataUrl
+            ? <img src={userAvatarDataUrl} alt="" className="w-full h-full object-cover" />
+            : <User size={11} className="text-gray-400" />
+        ) : (
+          // AI avatar is ALWAYS the LU black/white monogram (theme-inverted).
+          <img src="/LU-monogram-bw.png" alt="" className="w-4 h-4 object-contain dark:invert-0 invert opacity-80" />
+        )}
       </div>
 
       <div className="max-w-[80%] space-y-0.5">

@@ -93,6 +93,7 @@ export function CodexView() {
   const thinkingEnabled = useSettingsStore((s) => s.settings.thinkingEnabled)
   const codexReviewMode = useSettingsStore((s) => s.settings.codexReviewMode)
   const updateSettings = useSettingsStore((s) => s.updateSettings)
+  const userAvatarDataUrl = useSettingsStore((s) => s.settings.userAvatarDataUrl)
   const activeModel = useModelStore((s) => s.activeModel)
   const createConversation = useChatStore((s) => s.createConversation)
   const codexWorkingDir = useCodexStore((s) => s.workingDirectory)
@@ -231,14 +232,16 @@ export function CodexView() {
                     key={msg.id}
                     className={`flex gap-2 px-3 py-1 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}
                   >
-                    <div className={`w-5 h-5 rounded flex items-center justify-center shrink-0 ${
+                    <div className={`w-5 h-5 rounded overflow-hidden flex items-center justify-center shrink-0 ${
                       msg.role === 'user'
                         ? 'bg-gray-100 dark:bg-white/8'
                         : 'bg-gray-50 dark:bg-white/5'
                     }`}>
                       {msg.role === 'user'
-                        ? <User size={9} className="text-gray-400" />
-                        : <Code size={9} className="text-gray-500" />
+                        ? (userAvatarDataUrl
+                            ? <img src={userAvatarDataUrl} alt="" className="w-full h-full object-cover" />
+                            : <User size={9} className="text-gray-400" />)
+                        : <img src="/LU-monogram-bw.png" alt="" className="w-3 h-3 object-contain dark:invert-0 invert opacity-80" />
                       }
                     </div>
                     <div className="max-w-[85%] space-y-0.5">

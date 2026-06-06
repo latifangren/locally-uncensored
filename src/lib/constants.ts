@@ -56,6 +56,8 @@ export const DEFAULT_SETTINGS: Settings = {
   codexStageMode: false,
   codexReviewMode: false,
   defaultWorkspace: null,
+  // v8: user-uploaded profile picture (base64 data URL, ≤256px). '' = default icon.
+  userAvatarDataUrl: '',
 }
 
 /** Caveman mode system prompt prefixes — credit: github.com/JuliusBrussee/caveman (MIT) */

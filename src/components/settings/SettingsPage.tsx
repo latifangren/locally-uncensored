@@ -1,5 +1,5 @@
-import { useState, useEffect, type ReactNode } from 'react'
-import { ArrowLeft, RotateCcw, Sun, Moon, Mic, Volume2, Check, X, Loader2, Shield, ChevronRight, GraduationCap, Lock, Sliders, Plug, Bot, Phone } from 'lucide-react'
+import { useState, useEffect, useRef, type ReactNode, type ChangeEvent } from 'react'
+import { ArrowLeft, RotateCcw, Sun, Moon, Mic, Volume2, Check, X, Loader2, Shield, ChevronRight, GraduationCap, Lock, Sliders, Plug, Bot, Phone, User } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useSettingsStore } from '../../stores/settingsStore'
 import { useUIStore } from '../../stores/uiStore'
@@ -23,6 +23,79 @@ import { WorkflowBuilder } from '../agents/WorkflowBuilder'
 import { useUpdateStore, isNewerVersion } from '../../stores/updateStore'
 import { backendCall } from '../../api/backend'
 import { ArrowUpCircle } from 'lucide-react'
+
+// ── User profile picture (Appearance) ───────────────────────────
+// Self-contained like HfDownloadPathSetting. Stores the picture as a
+// downscaled base64 data URL (≤256px PNG) in settings so persisted state
+// stays small. Shows next to the user's messages in chat / code / agent.
+// The AI avatar is always the LU monogram and is NOT user-settable.
+function AvatarSetting() {
+  const userAvatarDataUrl = useSettingsStore((s) => s.settings.userAvatarDataUrl)
+  const updateSettings = useSettingsStore((s) => s.updateSettings)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  const onPick = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = '' // allow re-picking the same file
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = () => {
+      const img = new Image()
+      img.onload = () => {
+        // Downscale to ≤256px (longest edge) so the persisted data URL is small.
+        const MAX = 256
+        const scale = Math.min(1, MAX / Math.max(img.width, img.height))
+        const w = Math.max(1, Math.round(img.width * scale))
+        const h = Math.max(1, Math.round(img.height * scale))
+        const canvas = document.createElement('canvas')
+        canvas.width = w
+        canvas.height = h
+        const ctx = canvas.getContext('2d')
+        if (!ctx) return
+        ctx.drawImage(img, 0, 0, w, h)
+        updateSettings({ userAvatarDataUrl: canvas.toDataURL('image/png') })
+      }
+      img.src = reader.result as string
+    }
+    reader.readAsDataURL(file)
+  }
+
+  return (
+    <div className="flex items-center justify-between pt-2">
+      <span className="text-[0.7rem] text-gray-700 dark:text-gray-400">Profile picture</span>
+      <div className="flex items-center gap-2">
+        {userAvatarDataUrl ? (
+          <img src={userAvatarDataUrl} alt="" className="w-7 h-7 rounded-md object-cover border border-gray-200 dark:border-white/10" />
+        ) : (
+          <div className="w-7 h-7 rounded-md bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10 flex items-center justify-center">
+            <User size={12} className="text-gray-400" />
+          </div>
+        )}
+        <button
+          onClick={() => inputRef.current?.click()}
+          className="px-2 py-1 rounded text-[0.65rem] bg-gray-200 dark:bg-white/10 text-gray-900 dark:text-white hover:bg-gray-300 dark:hover:bg-white/15 transition-colors"
+        >
+          {userAvatarDataUrl ? 'Change' : 'Upload'}
+        </button>
+        {userAvatarDataUrl && (
+          <button
+            onClick={() => updateSettings({ userAvatarDataUrl: '' })}
+            className="px-2 py-1 rounded text-[0.65rem] text-gray-500 hover:text-red-400 transition-colors"
+          >
+            Remove
+          </button>
+        )}
+      </div>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/gif"
+        onChange={onPick}
+        className="hidden"
+      />
+    </div>
+  )
+}
 
 // ── Collapsible Section ─────────────────────────────────────────
 
@@ -730,6 +803,7 @@ export function SettingsPage() {
                 </button>
               </div>
             </div>
+            <AvatarSetting />
           </Section>
 
           <Section title="Generation">

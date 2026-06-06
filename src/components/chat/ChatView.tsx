@@ -12,9 +12,8 @@ import { AgentModeToggle } from './AgentModeToggle'
 import { AgentWorkspaceBadge } from './AgentWorkspaceBadge'
 import { ErrorBoundary } from '../ui/ErrorBoundary'
 import { useSettingsStore } from '../../stores/settingsStore'
-import { FEATURE_FLAGS } from '../../lib/constants'
-import { isAgentCompatible, isThinkingCompatible } from '../../lib/model-compatibility'
-import { FileText, Bot, ChevronDown, Download, Brain, Wrench, Radio, RefreshCw, X } from 'lucide-react'
+import { isThinkingCompatible } from '../../lib/model-compatibility'
+import { FileText, ChevronDown, Download, Brain, Wrench, Radio, RefreshCw, X } from 'lucide-react'
 import { PluginsDropdown } from './PluginsDropdown'
 import { TokenCounter } from './TokenCounter'
 import { ContextDropdown } from './ContextDropdown'
@@ -187,6 +186,14 @@ export function ChatView() {
                   </div>
                 )}
 
+                {/* Agent Mode — sits directly to the right of the Tools toggle.
+                    Tools only shows when agent is active, so when agent is OFF
+                    this Agent button occupies the Tools spot; when ON, Tools
+                    appears and Agent is immediately to its right. The button
+                    (in AgentModeToggle) is styled the same size as Tools. */}
+                <AgentModeToggle />
+                <AgentWorkspaceBadge />
+
                 {/* Spacer */}
                 <div className="flex-1" />
 
@@ -265,25 +272,7 @@ export function ChatView() {
                   )}
                 </button>
 
-                {/* Agent Mode */}
-                {FEATURE_FLAGS.AGENT_MODE && (
-                  <div className={
-                    'flex items-center gap-1 px-2 py-0.5 rounded border transition-colors text-[0.55rem] ' +
-                    (isAgentActive
-                      ? 'border-green-500/30 text-green-400'
-                      : activeModel && !isAgentCompatible(activeModel)
-                        ? 'border-white/[0.04] text-gray-600 opacity-50'
-                        : 'border-gray-200 dark:border-white/[0.06] text-gray-500')
-                  }>
-                    <Bot size={10} />
-                    <span>Agent</span>
-                    <AgentModeToggle />
-                    {/* Workspace badge — only renders when agent mode is
-                        on AND a workspace has been chosen. Click pops
-                        AgentWorkspaceDialog so the user can swap mid-chat. */}
-                    <AgentWorkspaceBadge />
-                  </div>
-                )}
+                {/* (Agent Mode toggle relocated above, next to the Tools toggle.) */}
               </div>
 
               <MessageList

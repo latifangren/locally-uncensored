@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { MessageSquarePlus } from 'lucide-react'
-import { ToggleSwitch } from '../ui/ToggleSwitch'
+import { MessageSquarePlus, Bot } from 'lucide-react'
 import { Modal } from '../ui/Modal'
 import { useAgentModeStore } from '../../stores/agentModeStore'
 import { useChatStore } from '../../stores/chatStore'
@@ -121,12 +120,30 @@ export function AgentModeToggle() {
 
   return (
     <>
-      <ToggleSwitch
-        enabled={isActive}
-        onChange={handleToggle}
+      {/* Tools-style button (same size/look as the Tools toggle it sits next
+          to). Green when active, dimmed + disabled when the model can't agent. */}
+      <button
+        onClick={handleToggle}
         disabled={!isCompatible}
-        size="sm"
-      />
+        title={
+          !isCompatible
+            ? 'This model is not agent-compatible'
+            : isActive
+              ? 'Agent Mode is on — click to turn off'
+              : 'Agent Mode is off — click to turn on'
+        }
+        className={
+          'flex items-center gap-1 px-2 py-0.5 rounded border transition-colors text-[0.55rem] ' +
+          (isActive
+            ? 'border-green-500/30 text-green-400'
+            : !isCompatible
+              ? 'border-white/[0.04] text-gray-600 opacity-50 cursor-not-allowed'
+              : 'border-gray-200 dark:border-white/[0.06] text-gray-500 hover:border-gray-400 dark:hover:border-white/15')
+        }
+      >
+        <Bot size={9} />
+        <span>Agent</span>
+      </button>
 
       {/* New Chat Required Modal */}
       <Modal open={showNewChatModal} onClose={() => { setShowNewChatModal(false); setNeverShowChecked(false) }} title="">

@@ -15,7 +15,9 @@ import { DEFAULT_SETTINGS, BUILT_IN_PERSONAS } from '../lib/constants'
 // for 3B-8B local models, default false). Same additive merge path below
 // ({ ...DEFAULT_SETTINGS, ...persisted.settings }) fills the new default in
 // while preserving every existing user value — existing users get it OFF.
-const STORE_VERSION = 7
+// v8: added settings.userAvatarDataUrl (user profile picture, default ''),
+// backfilled by the same additive merge — existing users keep the default icon.
+const STORE_VERSION = 8
 
 interface SettingsState {
   settings: Settings
