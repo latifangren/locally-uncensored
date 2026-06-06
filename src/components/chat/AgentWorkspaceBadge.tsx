@@ -36,7 +36,9 @@ export function AgentWorkspaceBadge() {
   const Icon = workspace.kind === 'folder' ? Folder : Shield
   const tone =
     workspace.kind === 'folder'
-      ? 'text-amber-500 border-amber-500/30'
+      // Picked folder = neutral / no colour (David 2026-06-06) — the amber read
+      // as an alert. Text + Folder icon inherit this gray. Sandbox stays green.
+      ? 'text-gray-500 dark:text-gray-400 border-gray-200 dark:border-white/10'
       : 'text-emerald-500 border-emerald-500/30'
 
   const handleChoose = (next: AgentWorkspace) => {
