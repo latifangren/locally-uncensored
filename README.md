@@ -37,51 +37,42 @@ No cloud. No data collection. No API keys. Auto-detects 12 local backends. Your 
 
 ## v2.5.0 — Current Release
 
-**The biggest update yet.** v2.5.0 brings a complete visual refresh, end-to-end local image *and* video creation, a smarter setup for small local models, on-device voice (speech-to-text + read-aloud), and a long list of reliability fixes — on top of the full Coding Agent sprint. Everything still runs 100% on your own machine, and your chats, models, and settings carry over automatically.
+**The biggest update since launch.** v2.5.0 isn't about new app categories — chat, image & video generation, the coding agent and the model manager were already here — it's a deep upgrade to all of them, plus several genuinely new tools. Everything still runs 100% on your own machine, and your chats, models, and settings carry over automatically.
 
 Auto-update prompts on next launch.
 
-### ✨ Design & everyday UX
-- **Refreshed look** — a calmer black-and-grey dark theme with light, floating panels, plus a one-click light/dark toggle.
-- **Your own profile picture** beside your messages; the AI always shows the app's own mark, so the two are easy to tell apart.
-- **Action bar on every message** — copy, regenerate, edit, or read aloud.
-- **Unlimited chat history** — chats and memories now live in a local database, so long, image-heavy threads no longer get cut off (existing data migrates over automatically).
-- **Editable memory** — a brain icon in the top bar lets you view, add, and delete what the assistant remembers.
+### 🤖 A much smarter Coding Agent
+The coding agent got a full overhaul: a plan-first **Architect mode**, whole-codebase awareness (**Repo-Map**, Aider-style PageRank), **review-before-apply diffs**, a read-only **Code-Review mode**, a **test-runner loop**, **background jobs** that survive a restart, **typed Git/GitHub tools**, **multi-repo** workspaces, and per-project **`.lurules`**. Iteration caps raised to 200 / 400.
 
-### 🎨 Image & video creation
-- **One Create tab** for both image and video, fully offline.
-- **Four modes** — Text-to-Image, Image-to-Image, Text-to-Video, and Image-to-Video, switchable right from the main screen.
-- **Model picker next to Generate**, plus a flicker-free full-screen viewer with zoom, pan, and the exact settings behind each result.
-- **LoRA, VAE override, CLIP-skip**, negative prompts, prompt history, and one-click MP4 support.
-- **Guided engine setup** — auto-installs the local image/video engine (and Python if needed) with clear recovery if startup stalls.
+### 🪶 Small-Model Mode *(new)*
+One switch tunes the app so compact **3B–8B** local models follow instructions and call tools far more reliably (off by default). Plus new **sub-4GB uncensored tool-callers** and **weight-class filters** in Discover so you find models that fit your machine.
 
-### 💬 Chat & model control
-- **Create images and videos straight from chat**, with honest limits instead of silent surprises when a model can't do something.
-- **Adjustable context window** with instant reload, plus a token-usage meter based on the model's real numbers.
-- **Load or unload any local model** from memory with one click.
+### 🎚️ Real context control *(new)*
+Set the **context window per model** and watch **true token usage**. Before v2.5.0, LU never forwarded `num_ctx` to Ollama, so it silently capped at 2048 and clipped long chats + RAG — now it honours your setting. Plus one-click **load/unload** of any local model from memory.
 
-### 🪶 Small models & tool calling
-- **Small-Model Mode** — one switch tunes the app so compact 3B–8B models follow instructions and use tools far more reliably (off by default).
-- **New tiny uncensored tool-using models** (under 4 GB) and **size-class filters** in Discover so you can find models that fit your machine.
+### 🎙️ Voice that actually works
+**Talk-to-type** with live, on-device transcription (nothing is ever sent automatically) and **read-aloud** in a natural neural voice, both set up with one-click installers. The mic was effectively dead before this release; now it's solid.
 
-### 🤖 Coding Agent (Sprint A / B / C)
-- A dedicated agent that reads your files, writes code, and runs commands in a real project folder — with whole-codebase awareness (Repo-Map / Aider PageRank), a plan-first Architect mode, review-before-apply diffs, a read-only Code-Review mode, per-project `.lurules`, long-running background jobs, a one-step test runner, project scaffolding, and built-in typed Git/GitHub tools. Iteration caps raised to 200 iterations / 400 tool calls.
+### 🎨 Fresh design & everyday UX
+A calmer theme with floating panels and a **one-click light/dark toggle**, your own **profile picture**, a per-message **action bar** (copy / regenerate / edit / read-aloud), an **editable memory** brain icon, and **unlimited chat history** — chats & memories moved to a local database, so long, image-heavy threads no longer get cut off.
 
-### 🎙️ Voice
-- **Talk to type** with live, on-device transcription (nothing is ever sent automatically), and **read responses aloud** in a natural local voice — both set up with one-click installers.
+### 🖼️ Create-tab upgrades
+On top of the existing image/video generation: a **LoRA picker**, **VAE override** and **CLIP-skip**, a **model picker right next to Generate**, a **Text-to-Video / Image-to-Video switch** on the main screen, generated images shown inline in chat, and a rebuilt **flicker-free media viewer**.
 
-### 📦 Model Manager & downloads
-- **One-click downloads** for chat, image, and video models across Ollama and LM Studio, with resumable multi-part downloads, a size confirmation for very large models, clear badges (INSTALLED / AGENT / CPU-FRIENDLY / Fits GPU), and built-in search of online libraries.
-- **GPU picker** (Settings → Hardware) to pin a vendor + card on multi-GPU machines, and a **chatbot-export importer** that brings your ChatGPT, Claude, and Gemini history into your local knowledge store.
+### 📦 Model Manager & hardware
+A refreshed layout with **weight-class filters**, **resumable multi-part (sharded) downloads** with a size confirmation, **per-row LM Studio load/unload**, a fixed INSTALLED badge, and a new **GPU picker** (Settings → Hardware) to pin which card runs your models on multi-GPU rigs.
 
-### 🔧 Reliability
-- Your data survives restarts and updates; image/video generation no longer freezes; ComfyUI startup crashes are detected in seconds; a phantom GPU entry is gone; credentials are redacted from logs and `console.log` is stripped from production builds.
+### 🧰 New tools & reliability
+- **Import your chat history** — bring ChatGPT / Claude / Gemini exports into your local knowledge base.
+- **Troubleshoot panel** — per-backend health (Ollama / ComfyUI / LM Studio) plus system facts.
+- **Reliability** — your chats & settings now survive restarts *and* updates (a major fix), no more stuck "ComfyUI starting…", a phantom GPU entry is gone, credentials are redacted from logs, and `console.log` is stripped from production builds.
+- Plus reporter-driven fixes (context window, download routing + badges, Hermes 3 pulls, backend persistence).
 
 ### ☁️ Optional cloud waitlist
-- A small, dismissible badge to be notified if a hosted version ever arrives — it only sends an email address you choose to type in. Everything else stays on your device.
+A small, dismissible badge to be notified if a hosted version ever arrives — it only sends an email address you choose to type in. Everything else stays on your device.
 
 ### Stability
-- Frontend test suite: **2,725 tests** green. Rust test suite + production build green. No breaking changes — settings auto-default and your data migrates forward.
+Frontend test suite: **2,725 tests** green. Rust test suite + production build green. No breaking changes — settings auto-default and your data migrates forward.
 
 For previous release notes (v2.4.9, v2.4.8, v2.4.6, v2.4.5), see [CHANGELOG.md](CHANGELOG.md).
 
