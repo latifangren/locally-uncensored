@@ -22,7 +22,7 @@ export function Sidebar() {
     enabled: remoteEnabled, passcode, passcodeExpiresAt, lanUrl, mobileUrl,
     qrPngBase64, loading: remoteLoading, error: remoteError,
     tunnelActive, tunnelUrl, tunnelLoading,
-    qrVisible, showQr, hideQr, refreshDevices,
+    qrVisible, hideQr, refreshDevices,
     dispatchedConversationId, dispatch, undispatch, regenerateToken, restart,
   } = useRemoteStore()
   const [search, setSearch] = useState('')

@@ -17,7 +17,6 @@ export function UpdateBadge() {
     downloadedBytes,
     totalBytes,
     errorMessage,
-    checkForUpdate,
     downloadUpdate,
     installAndRestart,
     dismissUpdate,

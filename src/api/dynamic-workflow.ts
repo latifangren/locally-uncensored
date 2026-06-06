@@ -5,7 +5,6 @@ import {
   getAllNodeInfo,
   categorizeNodes,
   detectAvailableModels,
-  type NodeMetadata,
   type CategorizedNodes,
   type AvailableModels,
 } from './comfyui-nodes'

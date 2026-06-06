@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { v4 as uuid } from 'uuid'
-import { Plus, Trash2, Power, PowerOff, ChevronDown } from 'lucide-react'
+import { Plus, Trash2, Power, PowerOff } from 'lucide-react'
 import { useMCPStore } from '../../stores/mcpStore'
 import { toolRegistry } from '../../api/mcp'
 import type { MCPServerConfig } from '../../api/mcp/types'

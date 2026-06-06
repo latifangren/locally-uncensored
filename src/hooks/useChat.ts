@@ -18,7 +18,6 @@ import { getProviderForModel, getProviderIdFromModel } from "../api/providers"
 import { syncOllamaHealthFromError } from "../lib/sync-ollama-health"
 import { isThinkingCompatible, isPlainTextPlanner } from "../lib/model-compatibility"
 import { stripNonCanonicalTags, finalStripThinkingTags } from "../lib/thinking-stripper"
-import type { ChatStreamChunk } from "../api/providers/types"
 import type { ImageAttachment } from "../types/chat"
 import { log } from "../lib/logger"
 

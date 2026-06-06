@@ -5,13 +5,12 @@
  * Supports: prompt, tool, condition, loop, user_input, memory_save steps.
  */
 
-import { v4 as uuid } from 'uuid'
 import { useModelStore } from '../stores/modelStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { useMemoryStore } from '../stores/memoryStore'
 import { getOllamaTools, executeAgentTool } from '../api/tool-registry'
 import { chatNonStreaming } from '../api/agents'
-import { buildHermesToolPrompt, buildHermesToolResult, parseHermesToolCalls, stripToolCallTags, hasToolCallTags } from '../api/hermes-tool-calling'
+import { buildHermesToolPrompt, parseHermesToolCalls, stripToolCallTags, hasToolCallTags } from '../api/hermes-tool-calling'
 import { resolveToolCallingStrategy } from './agent-strategy'
 import type { AgentWorkflow, WorkflowStep, StepResult, WorkflowEngineCallbacks } from '../types/agent-workflows'
 import type { ChatMessage, ToolDefinition } from '../api/providers/types'

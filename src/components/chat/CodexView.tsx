@@ -14,7 +14,7 @@ import { TypingIndicator } from './TypingIndicator'
 import { useSettingsStore } from '../../stores/settingsStore'
 import { useModelStore } from '../../stores/modelStore'
 import { StagedChangesPanel } from './StagedChangesPanel'
-import { User, Code, Brain, Eye, GitBranch, Download, RefreshCw, RotateCcw, Folder } from 'lucide-react'
+import { User, Code, Eye, GitBranch, Download, RefreshCw, RotateCcw, Folder } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { checkGitInstalled, openExternal, type GitStatus } from '../../api/backend'
 import { extractToolCallsWithRanges, stripRanges } from '../../lib/tool-call-repair'
@@ -90,9 +90,7 @@ export function CodexView() {
     }
   }, [messages, thread?.events])
 
-  const thinkingEnabled = useSettingsStore((s) => s.settings.thinkingEnabled)
   const codexReviewMode = useSettingsStore((s) => s.settings.codexReviewMode)
-  const updateSettings = useSettingsStore((s) => s.updateSettings)
   const userAvatarDataUrl = useSettingsStore((s) => s.settings.userAvatarDataUrl)
   const activeModel = useModelStore((s) => s.activeModel)
   const createConversation = useChatStore((s) => s.createConversation)

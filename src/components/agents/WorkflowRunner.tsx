@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { Loader2, Check, X, Circle, Send, Square } from 'lucide-react'
 import { useAgentWorkflowStore } from '../../stores/agentWorkflowStore'
-import { GlowButton } from '../ui/GlowButton'
 import type { StepStatus } from '../../types/agent-workflows'
 
 const STATUS_ICONS: Record<StepStatus | 'waiting', typeof Check> = {

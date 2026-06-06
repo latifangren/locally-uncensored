@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { Play, Pencil, Trash2, Copy, Plus, Search, FileText, Code, Zap } from 'lucide-react'
 import { useAgentWorkflowStore } from '../../stores/agentWorkflowStore'
-import { GlowButton } from '../ui/GlowButton'
 import type { AgentWorkflow } from '../../types/agent-workflows'
 
 // Map workflow icon names to Lucide components

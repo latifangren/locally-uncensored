@@ -20,7 +20,6 @@ const PIPER_VOICES: { id: string; label: string }[] = [
 ]
 import { useAgentModeStore } from '../../stores/agentModeStore'
 import { FEATURE_FLAGS } from '../../lib/constants'
-import { getRecommendedAgentModels } from '../../lib/model-compatibility'
 import { MemorySettings } from './MemorySettings'
 import { RemoteAccessSettings } from './RemoteAccessSettings'
 import { RemoteAccessDocs } from './RemoteAccessDocs'

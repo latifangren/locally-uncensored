@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Minus, Square, Copy, X as XIcon, ArrowRight, Download, Check, ChevronRight, Loader2, RefreshCw, ExternalLink, FolderOpen } from 'lucide-react'
+import { Minus, Square, X as XIcon, ArrowRight, Download, Check, ChevronRight, Loader2, RefreshCw, ExternalLink, FolderOpen } from 'lucide-react'
 import { useSettingsStore } from '../../stores/settingsStore'
 import { useProviderStore } from '../../stores/providerStore'
-import { ONBOARDING_MODELS, type OnboardingModel } from '../../lib/constants'
+import { ONBOARDING_MODELS } from '../../lib/constants'
 import { PROVIDER_PRESETS } from '../../api/providers/types'
 import { detectLocalBackends, type DetectedBackend } from '../../lib/backend-detector'
 import { detectProviderModelPath, startModelDownloadToPath } from '../../api/discover'
@@ -104,7 +104,7 @@ export function Onboarding() {
   const [pythonInstalling, setPythonInstalling] = useState(false)
   const [pythonInstallLogs, setPythonInstallLogs] = useState<string[]>([])
   const [pythonInstallError, setPythonInstallError] = useState('')
-  const [pythonReady, setPythonReady] = useState(false)
+  const [, setPythonReady] = useState(false)
   const [pythonStartTime, setPythonStartTime] = useState<number | null>(null)
   const [pythonElapsed, setPythonElapsed] = useState(0)
   const [systemVRAM, setSystemVRAM] = useState<number | null>(null)

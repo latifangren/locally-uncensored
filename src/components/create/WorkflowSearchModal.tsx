@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Search, Upload, Loader2, AlertCircle, Key, Eye, EyeOff } from 'lucide-react'
 import { v4 as uuid } from 'uuid'
 import { Modal } from '../ui/Modal'

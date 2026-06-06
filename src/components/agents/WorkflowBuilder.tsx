@@ -4,7 +4,7 @@ import { Plus, Trash2, ChevronUp, ChevronDown, Save, X, ArrowLeft } from 'lucide
 import { useAgentWorkflowStore } from '../../stores/agentWorkflowStore'
 import { AGENT_TOOL_DEFS } from '../../api/tool-registry'
 import { GlowButton } from '../ui/GlowButton'
-import type { WorkflowStep, WorkflowStepType, AgentWorkflow } from '../../types/agent-workflows'
+import type { WorkflowStep, WorkflowStepType } from '../../types/agent-workflows'
 import type { MemoryType } from '../../types/agent-mode'
 
 const STEP_TYPE_LABELS: Record<WorkflowStepType, string> = {

@@ -12,7 +12,6 @@ interface Props {
 export function WorkflowFinder({ modelName, modelType }: Props) {
   const [modalOpen, setModalOpen] = useState(false)
   const {
-    installedWorkflows,
     getWorkflowForModel,
     assignToModelName,
     unassignModelName,
@@ -20,15 +19,6 @@ export function WorkflowFinder({ modelName, modelType }: Props) {
   } = useWorkflowStore()
 
   const activeWorkflow = getWorkflowForModel(modelName, modelType)
-
-  const handleSelect = (workflowId: string) => {
-    if (workflowId === 'auto') {
-      unassignModelName(modelName)
-      unassignModelType(modelType)
-    } else {
-      assignToModelName(modelName, workflowId)
-    }
-  }
 
   return (
     <>

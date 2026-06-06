@@ -17,8 +17,6 @@ import { speakStreaming, isSpeechSynthesisSupported, getVoicesAsync } from '../a
 import { toolRegistry } from '../api/mcp'
 import { usePermissionStore } from '../stores/permissionStore'
 import { isThinkingCompatible, isPlainTextPlanner } from '../lib/model-compatibility'
-// Legacy compat imports (still used by some callers)
-import { getToolPermission, executeAgentTool, AGENT_TOOL_DEFS } from '../api/tool-registry'
 import { getToolCallingStrategy, type ToolCallingStrategy } from '../lib/model-compatibility'
 import { log } from '../lib/logger'
 import { buildHermesToolPrompt, buildHermesToolResult, parseHermesToolCalls, stripToolCallTags, hasToolCallTags } from '../api/hermes-tool-calling'
@@ -33,7 +31,7 @@ import { buildExtractionPrompt, parseExtractionResponse } from '../lib/memory-ex
 import { useAgentWorkflowStore } from '../stores/agentWorkflowStore'
 import { WorkflowEngine } from '../lib/workflow-engine'
 import type { AgentBlock, AgentToolCall, OllamaChatMessage } from '../types/agent-mode'
-import { selectRelevantTools, selectRelevantToolsAsync } from '../lib/tool-selection'
+import { selectRelevantToolsAsync } from '../lib/tool-selection'
 import { generateEmbeddings } from '../api/rag'
 import { truncateToolResult } from '../lib/truncate-tool-result'
 import { budgetFromSettings } from '../api/agents/budget'
@@ -138,15 +136,6 @@ export function useAgentChat() {
     useChatStore.getState().updateMessageAgentBlocks(convId, msgId, blocksRef.current)
   }
 
-  function updateLastBlock(convId: string, msgId: string, updates: Partial<AgentBlock>) {
-    const blocks = [...blocksRef.current]
-    const last = blocks[blocks.length - 1]
-    if (last) {
-      blocks[blocks.length - 1] = { ...last, ...updates }
-      blocksRef.current = blocks
-      useChatStore.getState().updateMessageAgentBlocks(convId, msgId, blocks)
-    }
-  }
 
   /**
    * ID-keyed block update — used by the parallel tool executor (Phase 5) so

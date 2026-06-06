@@ -12,8 +12,7 @@ import { AgentModeToggle } from './AgentModeToggle'
 import { AgentWorkspaceBadge } from './AgentWorkspaceBadge'
 import { ErrorBoundary } from '../ui/ErrorBoundary'
 import { useSettingsStore } from '../../stores/settingsStore'
-import { isThinkingCompatible } from '../../lib/model-compatibility'
-import { FileText, ChevronDown, Download, Brain, Wrench, Radio, RefreshCw, X } from 'lucide-react'
+import { FileText, ChevronDown, Download, Wrench, Radio, RefreshCw, X } from 'lucide-react'
 import { PluginsDropdown } from './PluginsDropdown'
 import { TokenCounter } from './TokenCounter'
 import { ContextDropdown } from './ContextDropdown'
@@ -38,10 +37,6 @@ export function ChatView() {
   const [exportOpen, setExportOpen] = useState(false)
   const [exportToast, setExportToast] = useState<string>('')
   const [toolsDropdownOpen, setToolsDropdownOpen] = useState(false)
-  const [thinkHint, setThinkHint] = useState('')
-  const thinkingEnabled = useSettingsStore((s) => s.settings.thinkingEnabled)
-  const canThink = isThinkingCompatible(activeModel)
-  const updateSettings = useSettingsStore((s) => s.updateSettings)
   const chatMode = useCodexStore((s) => s.chatMode)
 
   const docCount = useRAGStore((s) =>

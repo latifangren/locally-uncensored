@@ -1,4 +1,4 @@
-import type { Tool, ToolName, ToolCall, AgentLogEntry } from "../types/agents";
+import type { Tool, ToolName, AgentLogEntry } from "../types/agents";
 import { backendCall, ollamaUrl, localFetch } from "./backend";
 
 export const AGENT_TOOLS: Tool[] = [

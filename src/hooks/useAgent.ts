@@ -10,7 +10,6 @@ import {
 } from "../api/agents";
 import type {
   AgentRun,
-  AgentLogEntry,
   ToolCall,
   ToolName,
 } from "../types/agents";

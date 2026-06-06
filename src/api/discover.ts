@@ -258,7 +258,6 @@ export async function installBundleComplete(bundle: ModelBundle): Promise<void> 
 
 // ─── Component Registry: What each model type needs to work ───
 
-import type { ModelType } from './comfyui'
 
 export interface ComponentSpec {
   patterns: string[]
