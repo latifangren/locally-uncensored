@@ -63,6 +63,9 @@ export function AgentWorkspaceBadge() {
         <AgentWorkspaceDialog
           open={true}
           conversationId={activeId}
+          // Re-opening a folder chat from the badge jumps straight to the
+          // multi-repo extras manager (add repos / remember-as-default).
+          initialWorkspace={workspace}
           onChoose={handleChoose}
           onClose={() => setDialogOpen(false)}
         />

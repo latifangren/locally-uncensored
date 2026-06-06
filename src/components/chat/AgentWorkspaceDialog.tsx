@@ -12,6 +12,14 @@ interface Props {
   /** Called with the chosen workspace; parent persists + closes. */
   onChoose: (workspace: AgentWorkspace) => void
   onClose: () => void
+  /**
+   * When set to an existing FOLDER workspace, the dialog opens straight into
+   * the multi-repo "extras" manager for it (used by the workspace badge so a
+   * folder chat can add repos / set remember-as-default later). Omitted on the
+   * first agent activation → the dialog starts at the kind picker, and picking
+   * a folder there commits immediately (no second confirmation step).
+   */
+  initialWorkspace?: AgentWorkspace | null
 }
 
 /**
@@ -31,11 +39,16 @@ export function AgentWorkspaceDialog({
   conversationId,
   onChoose,
   onClose,
+  initialWorkspace,
 }: Props) {
   const lastFolder = useAgentModeStore((s) => s.lastFolder)
   const [picking, setPicking] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [draft, setDraft] = useState<AgentWorkspace | null>(null)
+  // Re-opened on an existing folder chat → jump straight to the extras
+  // manager. Fresh activation → null → kind picker (folder pick commits).
+  const [draft, setDraft] = useState<AgentWorkspace | null>(
+    initialWorkspace && initialWorkspace.kind === 'folder' ? initialWorkspace : null,
+  )
   const [rememberAsDefault, setRememberAsDefault] = useState(false)
 
   const handleSandbox = () => {
@@ -46,7 +59,8 @@ export function AgentWorkspaceDialog({
   const handleUseLast = () => {
     if (!lastFolder) return
     setError(null)
-    setDraft({ kind: 'folder', path: lastFolder, extraPaths: [] })
+    // Selecting a folder IS the decision — commit + close (parity with Sandbox).
+    onChoose({ kind: 'folder', path: lastFolder, extraPaths: [] })
   }
 
   const handlePick = async () => {
@@ -54,18 +68,20 @@ export function AgentWorkspaceDialog({
     setError(null)
     try {
       const res = await backendCall<{ path?: string } | null>('pick_folder', {})
-      if (!res || !res.path) {
-        setPicking(false)
+      if (res && res.path) {
+        // Commit + close right after the folder is chosen. Picking IS the
+        // decision — the dialog must go away (David 2026-06-06). Multi-repo
+        // extras / remember-as-default are managed later via the badge.
+        onChoose({ kind: 'folder', path: res.path, extraPaths: [] })
         return
       }
-      setDraft({ kind: 'folder', path: res.path, extraPaths: [] })
     } catch (e) {
       setError(
         e instanceof Error ? e.message : 'Folder picker unavailable (bridge offline?)',
       )
-    } finally {
-      setPicking(false)
     }
+    // Only reached on cancel/error — the dialog stays open.
+    setPicking(false)
   }
 
   const handleAddExtra = async () => {
