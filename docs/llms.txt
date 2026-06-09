@@ -25,7 +25,7 @@ Locally Uncensored is a free, open-source (AGPL-3.0) desktop application that co
 - Plug & Play setup wizard auto-detects 12 local backends
 - One-click in-app installer for Ollama and ComfyUI
 - Configurable HuggingFace GGUF download path (v2.4.0)
-- Built-in Codex coding agent with live tool-call streaming, file tree, AUTONOMY contract
+- Built-in Coding Agent with live tool-call streaming, file tree, AUTONOMY contract
 - Agent Mode with 14 tools, MCP integration, sub-agent delegation, budget caps
 - Mobile remote access via LAN or Cloudflare Tunnel with 6-digit passcode + QR setup
 - A/B Model Compare and Local Benchmark built in

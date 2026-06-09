@@ -23,7 +23,7 @@ Locally Uncensored is a desktop application for running AI models on your own ha
 ## Frequently Asked Questions
 
 ### What is Locally Uncensored?
-A free, open-source desktop app for running AI locally. It combines chat (20+ provider presets), a coding agent (Codex) with 14 tools, image generation via ComfyUI (FLUX 2, Juggernaut XL, Z-Image, SDXL), and video generation (Wan 2.1, HunyuanVideo, LTX 2.3, FramePack F1) in one interface. AGPL-3.0 licensed.
+A free, open-source desktop app for running AI locally. It combines chat (20+ provider presets), a coding agent with 14 tools, image generation via ComfyUI (FLUX 2, Juggernaut XL, Z-Image, SDXL), and video generation (Wan 2.1, HunyuanVideo, LTX 2.3, FramePack F1) in one interface. AGPL-3.0 licensed.
 
 ### Does it support Qwen 3.6, GPT-OSS and GLM-4.7?
 Yes. Qwen 3.6 (35B MoE) has day-0 integration with vision, agentic coding, thinking preservation and 256K context. GPT-OSS-120B and GPT-OSS-20B run via Ollama. GLM-4.7 Flash is supported through Ollama. DeepSeek R1, Llama 4, Gemma 4, Mistral Small 3 and Phi 4 are also ready.
@@ -50,7 +50,7 @@ Only if you explicitly dispatch a chat over LAN or Cloudflare Tunnel. Remote acc
 Not yet. Windows 10/11 and Linux are supported now. macOS is on the roadmap but not promised. The source is AGPL-3.0, so it can be built for other platforms.
 
 ### Is there a mobile app?
-Yes. The desktop app hosts a full mobile web app over LAN or Cloudflare Tunnel. From a phone you get chat, Codex coding, 14 agent tools, plugins and personas.
+Yes. The desktop app hosts a full mobile web app over LAN or Cloudflare Tunnel. From a phone you get chat, Coding Agent, 14 agent tools, plugins and personas.
 
 ### Which AI backends does it detect?
 It auto-detects 12 local backends: Ollama, LM Studio, vLLM, KoboldCpp, llama.cpp, LocalAI, Jan, TabbyAPI, GPT4All, Aphrodite, SGLang and TGI. ComfyUI is used for image and video generation. If none are running, the setup wizard offers one-click install links.
@@ -65,7 +65,7 @@ About five minutes. There is no Docker, terminal or config file. Run the install
 - One-click in-app installers for Ollama and ComfyUI
 - 75+ one-click model downloads with hardware-aware recommendations
 - VRAM tier filter: Lightweight (≤10 GB), Mid-Range (10-16 GB), High-End (>16 GB) across text, image and video models
-- Codex coding agent with live token streaming, apply-patch, file tree
+- Coding Agent with live token streaming, apply-patch, file tree
 - Claude Code CLI integration
 - Agent Mode with 14 tools, parallel execution, MCP integration, sub-agent delegation, budget caps
 - Image generation via ComfyUI (FLUX 2 Klein, FLUX.1, Juggernaut XL, Z-Image Turbo, ERNIE-Image, SDXL, SD 3.5)
@@ -127,7 +127,7 @@ About five minutes. There is no Docker, terminal or config file. Run the install
 ## Installation
 1. Download the signed installer for Windows or Linux from GitHub Releases (https://github.com/PurpleDoubleD/locally-uncensored/releases/latest). One-click install — no Docker, no terminal, no config files.
 2. On first launch, the setup wizard scans for 12 local AI backends and offers one-click install links if none are running.
-3. Pick a model from the Model Manager and start chatting. Switch to Codex for coding, or open Create to generate images and video. Add cloud providers in Settings to mix local and cloud.
+3. Pick a model from the Model Manager and start chatting. Switch to the Coding Agent for coding, or open Create to generate images and video. Add cloud providers in Settings to mix local and cloud.
 
 ## Privacy
 - 100% local by default

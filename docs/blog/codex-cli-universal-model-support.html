@@ -4,10 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Your Local AI Agent Shouldn't Care Which Model You Run — Locally Uncensored</title>
-<meta name="description" content="How Locally Uncensored's Codex CLI works with any model — native tool calling for compatible models, Hermes XML fallback for everything else. Universal coding agent support for local LLMs.">
-<meta name="keywords" content="local AI agent, tool calling, Hermes XML, coding agent, MCP tools, Ollama tool calling, universal model support, locally uncensored codex, local LLM agent, uncensored AI coding">
+<meta name="description" content="How Locally Uncensored's Coding Agent works with any model — native tool calling for compatible models, Hermes XML fallback for everything else. Universal coding agent support for local LLMs.">
+<meta name="keywords" content="local AI agent, tool calling, Hermes XML, coding agent, MCP tools, Ollama tool calling, universal model support, locally uncensored coding agent, local LLM agent, uncensored AI coding">
 <meta property="og:title" content="Your Local AI Agent Shouldn't Care Which Model You Run">
-<meta property="og:description" content="How Locally Uncensored's Codex CLI works with any model — native tool calling for compatible models, Hermes XML fallback for everything else.">
+<meta property="og:description" content="How Locally Uncensored's Coding Agent works with any model — native tool calling for compatible models, Hermes XML fallback for everything else.">
 <meta property="og:image" content="https://raw.githubusercontent.com/PurpleDoubleD/locally-uncensored/master/docs/social-preview.png">
 <meta property="og:url" content="https://locallyuncensored.com/blog/codex-cli-universal-model-support.html">
 <meta property="og:type" content="article">
@@ -19,7 +19,7 @@
 <meta property="article:tag" content="MCP Tools">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Your Local AI Agent Shouldn't Care Which Model You Run">
-<meta name="twitter:description" content="How Locally Uncensored's Codex CLI works with any model — native tool calling for compatible models, Hermes XML fallback for everything else.">
+<meta name="twitter:description" content="How Locally Uncensored's Coding Agent works with any model — native tool calling for compatible models, Hermes XML fallback for everything else.">
 <meta name="twitter:image" content="https://raw.githubusercontent.com/PurpleDoubleD/locally-uncensored/master/docs/social-preview.png">
 <link rel="canonical" href="https://locallyuncensored.com/blog/codex-cli-universal-model-support.html">
 <meta name="robots" content="index, follow">
@@ -27,7 +27,7 @@
 <link rel="icon" href="../favicon.png">
 <!-- Privacy: No external fonts loaded. Using system fonts. -->
 <script type="application/ld+json">
-{"@context":"https://schema.org","@type":"BlogPosting","headline":"Your Local AI Agent Shouldn't Care Which Model You Run","description":"How Locally Uncensored's Codex CLI works with any model — native tool calling for compatible models, Hermes XML fallback for everything else. Universal coding agent support for local LLMs.","image":"https://raw.githubusercontent.com/PurpleDoubleD/locally-uncensored/master/docs/social-preview.png","datePublished":"2026-04-09","dateModified":"2026-04-09","author":{"@type":"Person","name":"PurpleDoubleD","url":"https://github.com/PurpleDoubleD"},"publisher":{"@type":"Organization","name":"Locally Uncensored","url":"https://locallyuncensored.com/"},"mainEntityOfPage":{"@type":"WebPage","@id":"https://locallyuncensored.com/blog/codex-cli-universal-model-support.html"},"keywords":"local AI agent, tool calling, Hermes XML, coding agent, MCP tools, Ollama tool calling, universal model support, locally uncensored codex"}
+{"@context":"https://schema.org","@type":"BlogPosting","headline":"Your Local AI Agent Shouldn't Care Which Model You Run","description":"How Locally Uncensored's Coding Agent works with any model — native tool calling for compatible models, Hermes XML fallback for everything else. Universal coding agent support for local LLMs.","image":"https://raw.githubusercontent.com/PurpleDoubleD/locally-uncensored/master/docs/social-preview.png","datePublished":"2026-04-09","dateModified":"2026-04-09","author":{"@type":"Person","name":"PurpleDoubleD","url":"https://github.com/PurpleDoubleD"},"publisher":{"@type":"Organization","name":"Locally Uncensored","url":"https://locallyuncensored.com/"},"mainEntityOfPage":{"@type":"WebPage","@id":"https://locallyuncensored.com/blog/codex-cli-universal-model-support.html"},"keywords":"local AI agent, tool calling, Hermes XML, coding agent, MCP tools, Ollama tool calling, universal model support, locally uncensored coding agent"}
 </script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
@@ -140,7 +140,7 @@ footer a:hover{color:var(--text);text-decoration:none}
 
     <p>The core problem is <strong>tool calling</strong>. It&rsquo;s the mechanism that turns a chatbot into an agent &mdash; the model doesn&rsquo;t just generate text, it emits structured calls to functions like &ldquo;read this file&rdquo; or &ldquo;run this shell command.&rdquo; But there&rsquo;s no universal standard for how models express tool calls. OpenAI uses a JSON schema format. Anthropic has its own protocol. Ollama exposes native tool calling for some models but not others. And many local models &mdash; especially uncensored, abliterated, or community-finetuned variants &mdash; don&rsquo;t support structured tool calling at all.</p>
 
-    <p>So we built a system in <a href="https://github.com/PurpleDoubleD/locally-uncensored">Locally Uncensored</a> (v2.2.3) that makes our Codex coding agent work with <strong>any model</strong>. Not &ldquo;any model from our approved list.&rdquo; Any model, period.</p>
+    <p>So we built a system in <a href="https://github.com/PurpleDoubleD/locally-uncensored">Locally Uncensored</a> (v2.2.3) that makes our Coding Agent work with <strong>any model</strong>. Not &ldquo;any model from our approved list.&rdquo; Any model, period.</p>
 
     <h2>The Dual-Strategy Approach</h2>
 
@@ -150,7 +150,7 @@ footer a:hover{color:var(--text);text-decoration:none}
 
     <p><strong>Strategy 2: Hermes XML fallback.</strong> If the model isn&rsquo;t on the compatibility list, we switch to an XML-based prompting strategy inspired by the Hermes function-calling format. Instead of relying on the model&rsquo;s native tool calling infrastructure, we inject tool definitions directly into the system prompt as XML schemas and instruct the model to emit tool calls as XML blocks in its response text. Then we parse those blocks out of the raw text output.</p>
 
-    <p>The decision happens automatically. You pick a model, start a Codex session, and the app figures out the right strategy. You never see a &ldquo;this model doesn&rsquo;t support tools&rdquo; error.</p>
+    <p>The decision happens automatically. You pick a model, start a Coding Agent session, and the app figures out the right strategy. You never see a &ldquo;this model doesn&rsquo;t support tools&rdquo; error.</p>
 
     <h2>Which Models Get Native Tool Calling</h2>
 
@@ -253,7 +253,7 @@ When you want to call a tool, emit:
 cd locally-uncensored
 # Windows: setup.bat | macOS/Linux: ./setup.sh</code></pre>
 
-    <p>Open the Codex tab, pick any model, select a project folder, and start giving it tasks. The app handles the native-vs-XML strategy decision automatically. Check permissions settings if you want to control what the agent can access.</p>
+    <p>Open the Coding Agent tab, pick any model, select a project folder, and start giving it tasks. The app handles the native-vs-XML strategy decision automatically. Check permissions settings if you want to control what the agent can access.</p>
 
     <p>If you&rsquo;re running Ollama, any model works. If yours isn&rsquo;t on the native tool calling list, you&rsquo;ll be on the XML fallback &mdash; and honestly, for most tasks, you won&rsquo;t notice the difference until you&rsquo;re doing complex multi-step workflows.</p>
 
