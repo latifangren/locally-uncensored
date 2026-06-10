@@ -58,6 +58,11 @@ export const DEFAULT_SETTINGS: Settings = {
   defaultWorkspace: null,
   // v8: user-uploaded profile picture (base64 data URL, ≤256px). '' = default icon.
   userAvatarDataUrl: '',
+  // v9: model-picker preferences (saved via the in-tool-call picker's save
+  // icon). '' = no saved choice → picker shows before the VRAM swap.
+  preferredImageModel: '',
+  preferredVideoT2VModel: '',
+  preferredVideoI2VModel: '',
 }
 
 /** Caveman mode system prompt prefixes — credit: github.com/JuliusBrussee/caveman (MIT) */

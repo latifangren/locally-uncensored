@@ -262,7 +262,10 @@ export const useCreateStore = create<CreateState>()(
       setFrames: (frames) => set({ frames: Math.max(1, Math.min(120, Math.floor(frames))) }),
       setFps: (fps) => set({ fps: Math.max(1, Math.min(60, Math.floor(fps))) }),
       setDenoise: (denoise) => set({ denoise: Math.max(0, Math.min(1, denoise)) }),
-      toggleLora: (name) => set((s) => {
+      // Explicit param types: this file's creator lost contextual typing long
+      // ago (pre-existing TS2740 on MODEL_TYPE_DEFAULTS) — without these the
+      // params would be implicit-any like the older setters around them.
+      toggleLora: (name: string) => set((s: CreateState) => {
         if (!name) return {}
         const exists = s.selectedLoras.some((l) => l.name === name)
         return {
@@ -271,7 +274,7 @@ export const useCreateStore = create<CreateState>()(
             : [...s.selectedLoras, { name, strength: 0.8 }],
         }
       }),
-      setLoraStrengthFor: (name, strength) => set((s) => ({
+      setLoraStrengthFor: (name: string, strength: number) => set((s: CreateState) => ({
         selectedLoras: s.selectedLoras.map((l) =>
           l.name === name ? { ...l, strength: Math.max(0, Math.min(2, strength)) } : l,
         ),

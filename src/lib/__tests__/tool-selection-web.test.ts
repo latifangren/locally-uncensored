@@ -7,7 +7,7 @@ import { DEFAULT_PERMISSIONS } from '../../api/mcp/types'
 const T = (name: string, category: MCPToolDefinition['category']): MCPToolDefinition => ({
   name,
   description: name,
-  inputSchema: { type: 'object', properties: {} },
+  inputSchema: { type: 'object', properties: {}, required: [] },
   category,
   source: 'builtin',
 })

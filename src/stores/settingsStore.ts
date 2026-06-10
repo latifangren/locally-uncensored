@@ -17,7 +17,11 @@ import { DEFAULT_SETTINGS, BUILT_IN_PERSONAS } from '../lib/constants'
 // while preserving every existing user value — existing users get it OFF.
 // v8: added settings.userAvatarDataUrl (user profile picture, default ''),
 // backfilled by the same additive merge — existing users keep the default icon.
-const STORE_VERSION = 8
+// v9 (v2.5.3): added the model-picker preferences preferredImageModel /
+// preferredVideoT2VModel / preferredVideoI2VModel (all default '' = "ask
+// before the VRAM swap"). Same additive merge path — existing users simply
+// see the picker on their next generation.
+const STORE_VERSION = 9
 
 interface SettingsState {
   settings: Settings

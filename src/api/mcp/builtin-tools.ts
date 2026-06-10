@@ -1001,6 +1001,13 @@ async function executeImageGenerate(args: Record<string, any>): Promise<string> 
   const flat: Record<string, any> = {}
   for (const [k, v] of Object.entries(args)) if (k !== 'settings' && v !== undefined) flat[k] = v
   const merged: Record<string, any> = { ...settings, ...flat }   // explicit flat args win; undefined never clobbers settings
+  // Model-Picker gate (v2.5.3): BEFORE the VRAM swap, let the user pick the
+  // ComfyUI model in the tool call (or silently use the saved preference).
+  // Returns null when an explicit model arg exists / nothing is installed /
+  // ComfyUI is unreachable — the existing pipeline then behaves as before.
+  const { pickModelForGeneration } = await import('../model-pick')
+  const picked = await pickModelForGeneration('image', merged)
+  if (picked) merged.model = picked
   const { vramHandoffGenerate } = await import('../vram-handoff')
   return vramHandoffGenerate('image', merged)
 }
@@ -1021,6 +1028,11 @@ async function executeVideoGenerate(args: Record<string, any>): Promise<string> 
   const flat: Record<string, any> = {}
   for (const [k, v] of Object.entries(args)) if (k !== 'settings' && v !== undefined) flat[k] = v
   const merged: Record<string, any> = { ...settings, ...flat }   // explicit flat args win; undefined never clobbers settings
+  // Model-Picker gate (v2.5.3) — see executeImageGenerate. T2V and I2V keep
+  // separate saved preferences (disjoint capability sets).
+  const { pickModelForGeneration } = await import('../model-pick')
+  const picked = await pickModelForGeneration('video', merged)
+  if (picked) merged.model = picked
   const { vramHandoffGenerate } = await import('../vram-handoff')
   return vramHandoffGenerate('video', merged)
 }

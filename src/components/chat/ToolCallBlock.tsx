@@ -3,6 +3,8 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Search, Globe, FileText, FileEdit, Terminal, Image, Film, Loader2, Check, X, Clock, AlertCircle, FolderOpen, Cpu, Monitor, GitBranch, Database } from 'lucide-react'
 import type { AgentToolCall } from '../../types/agent-mode'
 import { getComfyHost, getComfyPort } from '../../api/backend'
+import { useModelPickStore } from '../../stores/modelPickStore'
+import { ModelPickerCard, ChangeModelInline, pickKindForToolCall } from './ModelPickerCard'
 
 // F1 (konata3602 commitment 2026-05-23) + render fix (konata3602 bug 2026-06-07)
 // — when image_generate / video_generate / screenshot produce a ComfyUI output,
@@ -98,6 +100,14 @@ export function ToolCallBlock({ toolCall, onApprove, onReject }: Props) {
   // without the user having to expand the block — konata's "and no image".
   const previewUrl = comfyViewUrlFromResult(toolCall.result)
 
+  // Model-Picker (v2.5.3): while a generation tool call is RUNNING and the
+  // executor's pre-VRAM-swap gate is waiting, render the picker inside this
+  // block. Once a preference is saved (no picker shows), a mini "Change
+  // model" line takes its place so the choice stays one click away.
+  const pendingPick = useModelPickStore((s) => s.pending)
+  const genKind = pickKindForToolCall(toolCall)
+  const showPicker = !!genKind && !!pendingPick && pendingPick.kind === genKind && isRunning
+
   // Proxy-independent loading (konata 2026-06-08). In browser/dev the tool
   // result carries the RELATIVE `/comfyui/view?…` Vite-proxy path, which loads
   // fine under `npm run dev` (verified E2E). But a built frontend served
@@ -137,6 +147,12 @@ export function ToolCallBlock({ toolCall, onApprove, onReject }: Props) {
           </span>
         )}
       </button>
+
+      {/* Model-Picker (v2.5.3) — LU's own pre-VRAM-swap model choice, shown
+          while the executor gate awaits the pick. Falls back to the mini
+          "Change model" line once a preference is saved. */}
+      {showPicker && pendingPick && <ModelPickerCard request={pendingPick} />}
+      {!showPicker && genKind && <ChangeModelInline kind={genKind} />}
 
       {/* Inline media preview — ALWAYS visible for a completed image/video
           generation, even while the tool block stays collapsed. Before the
