@@ -239,6 +239,69 @@ export async function checkVideoOutputCapability(): Promise<{ mp4Capable: boolea
   }
 }
 
+/** Multi-LoRA (konata 2026-06-09) — normalize the `lora` param into an
+ *  ordered list. Accepts a single filename, an array, or a comma/semicolon-
+ *  joined string (the most common LLM shape for "use lora A and lora B" —
+ *  exactly the failing case where the joined string used to reach ComfyUI
+ *  verbatim and die with an opaque "Value not in list"). */
+export function normalizeLoraList(lora: string | string[] | undefined): string[] {
+  if (!lora) return []
+  const arr = Array.isArray(lora) ? lora : lora.split(/[,;]+/)
+  return arr.map((s) => (typeof s === 'string' ? s.trim() : '')).filter(Boolean)
+}
+
+/** One strength per LoRA: a single number applies to all, an array maps by
+ *  index (missing/invalid entries fall back to 0.8). No range clamp — the
+ *  LoraLoader node itself owns its real min/max (no magic numbers here);
+ *  only non-finite garbage is replaced. */
+export function normalizeLoraStrengths(
+  strength: number | number[] | undefined,
+  count: number,
+): number[] {
+  const fallback = 0.8
+  const sane = (v: unknown): number =>
+    typeof v === 'number' && Number.isFinite(v) ? v : fallback
+  if (typeof strength === 'number') return Array(count).fill(sane(strength))
+  if (Array.isArray(strength)) return Array.from({ length: count }, (_, i) => sane(strength[i]))
+  return Array(count).fill(fallback)
+}
+
+/** Resolve requested LoRA names against ComfyUI's installed LoraLoader enum.
+ *  Per name: exact → normalized (case/extension/path-separator insensitive)
+ *  → basename → unique substring. A miss throws an actionable error listing
+ *  what IS installed (same pattern as the Fix-C encoder hint) instead of
+ *  letting ComfyUI reject the whole workflow with "Value not in list". */
+export function resolveLoraNames(requested: string[], installed: string[]): string[] {
+  return requested.map((req) => {
+    const hit = resolveOneLora(req, installed)
+    if (!hit) {
+      const list = installed.length ? installed.slice(0, 12).join(', ') : '(none installed)'
+      throw new Error(
+        `LoRA "${req}" is not installed in ComfyUI. Installed LoRAs: ${list}. ` +
+        `Put the .safetensors file into ComfyUI/models/loras and retry, or drop the lora setting.`,
+      )
+    }
+    return hit
+  })
+}
+
+function resolveOneLora(req: string, installed: string[]): string | null {
+  if (installed.includes(req)) return req
+  const norm = (s: string) =>
+    s.toLowerCase().replace(/\.(safetensors|pt|ckpt|bin)$/i, '').replace(/\\/g, '/')
+  const rq = norm(req)
+  let hits = installed.filter((c) => norm(c) === rq)
+  if (hits.length === 1) return hits[0]
+  // Enum entries can be "subfolder/name.safetensors" — try basename equality.
+  const rqBase = rq.split('/').pop() || rq
+  hits = installed.filter((c) => (norm(c).split('/').pop() || '') === rqBase)
+  if (hits.length === 1) return hits[0]
+  // Last resort: unique substring either way round.
+  hits = installed.filter((c) => norm(c).includes(rq) || rq.includes(norm(c)))
+  if (hits.length === 1) return hits[0]
+  return null
+}
+
 export async function buildDynamicWorkflow(
   params: GenerateParams | VideoParams,
   modelType?: ModelType,
@@ -447,11 +510,16 @@ export async function buildDynamicWorkflow(
     samplerModelId = evolvedId
   }
 
-  // ─── Phase 1b: Optional LoRA + VAE + Skip-CLIP injection (F2 + F3) ───
+  // ─── Phase 1b: Optional LoRA chain + VAE + Skip-CLIP injection (F2 + F3) ───
   //
-  // Single LoRA slot (cinemazverev GH#4): LoraLoader takes (model, clip)
-  // and outputs new (model, clip) — we rewire both refs so the rest of
-  // the pipeline sees the LoRA-modified versions.
+  // LoRA chain (cinemazverev GH#4; multi-LoRA konata 2026-06-09): each
+  // LoraLoader takes (model, clip) and outputs new (model, clip) — chaining
+  // N loaders applies the LoRAs in order, exactly like stacking them in the
+  // ComfyUI graph editor. We rewire both refs after every link so the rest
+  // of the pipeline sees the fully-stacked versions. Names are resolved
+  // against ComfyUI's real LoraLoader enum (fuzzy: extension/case optional)
+  // and a miss throws an actionable error instead of ComfyUI's opaque
+  // "Value not in list".
   //
   // VAE override (vanja-san GH#4): VAELoader replaces vaeSourceId. The
   // checkpoint's bundled VAE stays unused.
@@ -463,21 +531,28 @@ export async function buildDynamicWorkflow(
   // All three are skipped (no extra nodes) when the corresponding
   // param is unset, so workflows without F2/F3 enabled stay byte-
   // identical to the previous behaviour.
-  if (params.lora) {
-    const loraId = String(n++)
-    workflow[loraId] = {
-      class_type: 'LoraLoader',
-      inputs: {
-        lora_name: params.lora,
-        strength_model: params.loraStrength ?? 0.8,
-        strength_clip: params.loraStrength ?? 0.8,
-        model: [samplerModelId, 0],
-        clip: [clipSourceId, clipOutputSlot],
-      },
-    }
-    samplerModelId = loraId
-    clipSourceId = loraId
-    clipOutputSlot = 1
+  const loraNames = normalizeLoraList(params.lora)
+  if (loraNames.length > 0) {
+    const installed: string[] =
+      (allNodes?.LoraLoader?.input?.required?.lora_name?.[0] as string[] | undefined) ?? []
+    const resolved = resolveLoraNames(loraNames, installed)
+    const strengths = normalizeLoraStrengths(params.loraStrength, resolved.length)
+    resolved.forEach((loraName, i) => {
+      const loraId = String(n++)
+      workflow[loraId] = {
+        class_type: 'LoraLoader',
+        inputs: {
+          lora_name: loraName,
+          strength_model: strengths[i],
+          strength_clip: strengths[i],
+          model: [samplerModelId, 0],
+          clip: [clipSourceId, clipOutputSlot],
+        },
+      }
+      samplerModelId = loraId
+      clipSourceId = loraId
+      clipOutputSlot = 1
+    })
   }
 
   if (params.vae && params.vae !== 'auto') {

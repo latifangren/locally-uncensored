@@ -36,10 +36,14 @@ export interface GenerateParams {
   batchSize: number
   inputImage?: string   // I2I source image filename (uploaded to ComfyUI)
   denoise?: number      // I2I denoise strength (0.0–1.0, default 1.0 = full txt2img)
-  // F2 (cinemazverev GH#4): a single LoRA slot. Empty = no LoRA.
-  // `loraStrength` mirrors LoraLoader's `strength_model` (0..2 typical).
-  lora?: string
-  loraStrength?: number
+  // F2 (cinemazverev GH#4), extended for multi-LoRA (konata 2026-06-09:
+  // "agent cannot load multiple loras"): one filename or an ordered list.
+  // Multiple LoRAs are CHAINED — LoraLoader N feeds (model, clip) into
+  // LoraLoader N+1, exactly like stacking them in the ComfyUI graph editor.
+  // `loraStrength` mirrors LoraLoader's `strength_model` (0..2 typical):
+  // a single number applies to every LoRA, an array maps per-LoRA by index.
+  lora?: string | string[]
+  loraStrength?: number | number[]
   // F3 (vanja-san GH#4): override the checkpoint's bundled VAE with an
   // explicit VAELoader. 'auto' / undefined / empty = keep the
   // checkpoint VAE.

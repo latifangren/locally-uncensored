@@ -27,7 +27,9 @@ export const DEFAULT_PERMISSIONS: PermissionMap = {
 // permissive on purpose: this is forwarded verbatim to the model as the tool's
 // `parameters`, not strictly validated here.
 export interface JSONSchemaProp {
-  type: string
+  /** Single JSON-Schema type or a union (e.g. ['string','array'] for the
+   *  multi-LoRA param). The args-validator already understands unions. */
+  type: string | string[]
   description?: string
   enum?: string[]
   items?: JSONSchemaProp

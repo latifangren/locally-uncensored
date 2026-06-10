@@ -676,8 +676,19 @@ async function generateImage(prompt: string, model: string, args: VramHandoffArg
         height,
         seed,
         batchSize,
-        ...(typeof a.lora === 'string' && a.lora ? { lora: a.lora as string } : {}),
-        ...(typeof a.loraStrength === 'number' ? { loraStrength: a.loraStrength as number } : {}),
+        // Multi-LoRA (konata): accept a single name, an array, or a comma-
+        // joined string; same for strengths. buildDynamicWorkflow normalizes
+        // and chains them — invalid shapes are simply dropped here.
+        ...(typeof a.lora === 'string' && a.lora
+          ? { lora: a.lora as string }
+          : Array.isArray(a.lora) && (a.lora as unknown[]).some((x) => typeof x === 'string' && x)
+            ? { lora: (a.lora as unknown[]).filter((x): x is string => typeof x === 'string' && !!x) }
+            : {}),
+        ...(typeof a.loraStrength === 'number'
+          ? { loraStrength: a.loraStrength as number }
+          : Array.isArray(a.loraStrength) && (a.loraStrength as unknown[]).some((x) => typeof x === 'number')
+            ? { loraStrength: (a.loraStrength as unknown[]).filter((x): x is number => typeof x === 'number') }
+            : {}),
         ...(typeof a.vae === 'string' && a.vae ? { vae: a.vae as string } : {}),
         ...(typeof a.clipSkip === 'number' ? { clipSkip: a.clipSkip as number } : {}),
         ...(inputImage ? { inputImage, denoise } : {}),
