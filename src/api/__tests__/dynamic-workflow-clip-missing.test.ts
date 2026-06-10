@@ -19,14 +19,16 @@ vi.mock('../comfyui-nodes', async (importOriginal) => {
 })
 vi.mock('../comfyui', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../comfyui')>()
-  return { ...actual, findMatchingCLIP: vi.fn(), findMatchingVAE: vi.fn() }
+  return { ...actual, findMatchingCLIP: vi.fn(), findMatchingVAE: vi.fn(), findFluxCLIPPair: vi.fn() }
 })
 
 import { buildDynamicWorkflow, WorkflowUnavailableError } from '../dynamic-workflow'
 import { getAllNodeInfo } from '../comfyui-nodes'
-import { findMatchingCLIP, findMatchingVAE } from '../comfyui'
+import { findMatchingCLIP, findMatchingVAE, findFluxCLIPPair } from '../comfyui'
 
 // Minimal /object_info that categorizes to a FLUX unet strategy.
+// Deliberately NO DualCLIPLoader → exercises the legacy single-CLIPLoader
+// fallback (pre-FLUX-era ComfyUI whose CLIPLoader enum still has 'flux').
 const FLUX_NODES = {
   UNETLoader: { input: { required: { unet_name: [[]] } } },
   CLIPLoader: { input: { required: { clip_name: [[]] } } },
@@ -36,6 +38,13 @@ const FLUX_NODES = {
   CLIPTextEncode: { input: { required: {} } },
   VAEDecode: { input: { required: {} } },
   SaveImage: { input: { required: {} } },
+}
+
+// Modern instance (ComfyUI ≥ v0.12: single CLIPLoader has NO 'flux' type —
+// FLUX v1 must go through DualCLIPLoader). C2 repro environment.
+const FLUX_NODES_DUAL = {
+  ...FLUX_NODES,
+  DualCLIPLoader: { input: { required: { clip_name1: [[]], clip_name2: [[]], type: [[]] } } },
 }
 
 const fluxParams = {
@@ -66,5 +75,53 @@ describe('buildDynamicWorkflow — Bug C: missing FLUX text encoder', () => {
       | undefined
     expect(clipLoader?.inputs.clip_name).toBe('t5xxl_fp8_e4m3fn.safetensors')
     expect(clipLoader?.inputs.clip_name).not.toBe('')
+  })
+})
+
+describe('buildDynamicWorkflow — C2: FLUX v1 on modern ComfyUI uses DualCLIPLoader', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(getAllNodeInfo).mockResolvedValue(FLUX_NODES_DUAL as never)
+    vi.mocked(findMatchingVAE).mockResolvedValue('ae.safetensors')
+  })
+
+  it('emits DualCLIPLoader (t5 + clip_l, type flux) instead of single CLIPLoader', async () => {
+    vi.mocked(findFluxCLIPPair).mockResolvedValue({
+      t5: 't5xxl_fp8_e4m3fn.safetensors',
+      clipL: 'clip_l.safetensors',
+    })
+    const wf = await buildDynamicWorkflow(fluxParams)
+    const nodes = Object.values(wf) as { class_type: string; inputs: Record<string, unknown> }[]
+    const dual = nodes.find((n) => n.class_type === 'DualCLIPLoader')
+    expect(dual?.inputs).toEqual({
+      clip_name1: 't5xxl_fp8_e4m3fn.safetensors',
+      clip_name2: 'clip_l.safetensors',
+      type: 'flux',
+    })
+    // No single CLIPLoader with the (now invalid) type 'flux' may remain.
+    const singleFlux = nodes.find((n) => n.class_type === 'CLIPLoader' && n.inputs.type === 'flux')
+    expect(singleFlux).toBeUndefined()
+    expect(vi.mocked(findMatchingCLIP)).not.toHaveBeenCalled()
+  })
+
+  it('propagates the actionable per-encoder error (e.g. missing CLIP-L)', async () => {
+    vi.mocked(findFluxCLIPPair).mockRejectedValue(
+      new Error('No FLUX CLIP-L text encoder found. Download "clip_l.safetensors" from the Model Manager.'),
+    )
+    await expect(buildDynamicWorkflow(fluxParams)).rejects.toBeInstanceOf(WorkflowUnavailableError)
+    await expect(buildDynamicWorkflow(fluxParams)).rejects.toThrow(/clip_l\.safetensors/)
+  })
+
+  it('keeps the single CLIPLoader for flux2 (its type IS valid there)', async () => {
+    vi.mocked(findMatchingCLIP).mockResolvedValue('qwen_3_4b_fp4_flux2.safetensors')
+    const wf = await buildDynamicWorkflow({
+      ...(fluxParams as Record<string, unknown>),
+      model: 'flux-2-klein-base-4b.safetensors',
+    } as never)
+    const nodes = Object.values(wf) as { class_type: string; inputs: Record<string, unknown> }[]
+    expect(nodes.find((n) => n.class_type === 'DualCLIPLoader')).toBeUndefined()
+    const single = nodes.find((n) => n.class_type === 'CLIPLoader')
+    expect(single?.inputs.type).toBe('flux2')
+    expect(vi.mocked(findFluxCLIPPair)).not.toHaveBeenCalled()
   })
 })

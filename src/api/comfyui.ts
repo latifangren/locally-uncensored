@@ -691,6 +691,26 @@ export async function findMatchingVAE(modelType: ModelType): Promise<string> {
 }
 
 /**
+ * Resolve the FLUX v1 text-encoder PAIR for DualCLIPLoader (C2, aldrich
+ * follow-up): modern ComfyUI removed 'flux' from the single CLIPLoader's type
+ * enum, so FLUX v1 conditioning must come from DualCLIPLoader, which needs
+ * BOTH encoders — clip_name1 = T5-XXL, clip_name2 = CLIP-L. Throws the same
+ * actionable "download <file> from the Model Manager" errors as
+ * findMatchingCLIP so buildDynamicWorkflow surfaces a fix path per missing
+ * encoder instead of a raw ComfyUI rejection.
+ */
+export async function findFluxCLIPPair(): Promise<{ t5: string; clipL: string }> {
+  const clips = await getCLIPModels()
+  if (clips.length === 0) throw new Error('No text encoder models found. Download a CLIP/T5 model for your model type from the Model Manager.')
+  const lower = (s: string) => s.toLowerCase()
+  const t5 = clips.find(c => lower(c).includes('t5') && !lower(c).includes('umt5') && !lower(c).includes('oldt5'))
+  const clipL = clips.find(c => lower(c).includes('clip_l'))
+  if (!t5) throw new Error(`No FLUX text encoder (T5) found. Download "t5xxl_fp8_e4m3fn.safetensors" from the Model Manager.`)
+  if (!clipL) throw new Error(`No FLUX CLIP-L text encoder found. Download "clip_l.safetensors" from the Model Manager.`)
+  return { t5, clipL }
+}
+
+/**
  * Pick the right text encoder for a model.
  *
  * @param modelType — ModelType from `classifyModel`.

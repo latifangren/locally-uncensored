@@ -1,4 +1,4 @@
-import { classifyModel, findMatchingVAE, findMatchingCLIP } from './comfyui'
+import { classifyModel, findMatchingVAE, findMatchingCLIP, findFluxCLIPPair } from './comfyui'
 import type { ModelType, GenerateParams, VideoParams } from './comfyui'
 import { log } from '../lib/logger'
 import {
@@ -325,19 +325,42 @@ export async function buildDynamicWorkflow(
     // Resolve the text encoder from the LIVE ComfyUI node enum. CRITICAL
     // (Bug C / aldrich "CLIPLoader: Value not in list"): do NOT silently fall
     // back to models.clips[0] / '' on a miss — an empty or wrong clip_name makes
-    // ComfyUI reject the prompt with that exact cryptic error. findMatchingCLIP
-    // already throws an actionable "download <encoder>" message; propagate it as
-    // a WorkflowUnavailableError so the user gets the download hint instead of a
+    // ComfyUI reject the prompt with that exact cryptic error. The resolvers
+    // throw actionable "download <encoder>" messages; propagate them as a
+    // WorkflowUnavailableError so the user gets the download hint instead of a
     // raw rejection. Pass the active UNet filename so the resolver prefers the
     // matching quant tier (fp4 model → fp4 encoder; fp8/bf16 → full precision).
-    let clip: string
-    try {
-      clip = await findMatchingCLIP(type, params.model)
-    } catch (clipErr) {
-      throw new WorkflowUnavailableError(
-        clipErr instanceof Error ? clipErr.message : 'Required text encoder not found in ComfyUI.',
-        strategy,
-      )
+    //
+    // C2 (aldrich follow-up, v2.5.3 fix #5): modern ComfyUI (v0.12.0 confirmed)
+    // removed 'flux' from the single CLIPLoader's type enum — FLUX v1 text
+    // encoding lives in DualCLIPLoader (clip_name1 = T5-XXL, clip_name2 =
+    // CLIP-L, type 'flux'), which has shipped with every FLUX-era ComfyUI.
+    // Emit it whenever the instance has the node; the single-CLIPLoader path
+    // stays as the fallback for pre-FLUX-era instances (whose CLIPLoader enum
+    // still contains 'flux'). Same pattern as the HunyuanVideo DualCLIPLoader
+    // below.
+    const useDualFluxClip = type === 'flux' && nodes.loaders.includes('DualCLIPLoader')
+
+    let clip = ''
+    let fluxPair: { t5: string; clipL: string } | null = null
+    if (useDualFluxClip) {
+      try {
+        fluxPair = await findFluxCLIPPair()
+      } catch (clipErr) {
+        throw new WorkflowUnavailableError(
+          clipErr instanceof Error ? clipErr.message : 'Required text encoder not found in ComfyUI.',
+          strategy,
+        )
+      }
+    } else {
+      try {
+        clip = await findMatchingCLIP(type, params.model)
+      } catch (clipErr) {
+        throw new WorkflowUnavailableError(
+          clipErr instanceof Error ? clipErr.message : 'Required text encoder not found in ComfyUI.',
+          strategy,
+        )
+      }
     }
 
     // VAE is only loaded for strategies with a separate VAELoader — LTX bakes it
@@ -360,10 +383,15 @@ export async function buildDynamicWorkflow(
       class_type: 'UNETLoader',
       inputs: { unet_name: params.model, weight_dtype: 'default' },
     }
-    workflow[clipId] = {
-      class_type: 'CLIPLoader',
-      inputs: { clip_name: clip, type: clipType, device: 'default' },
-    }
+    workflow[clipId] = useDualFluxClip && fluxPair
+      ? {
+          class_type: 'DualCLIPLoader',
+          inputs: { clip_name1: fluxPair.t5, clip_name2: fluxPair.clipL, type: 'flux' },
+        }
+      : {
+          class_type: 'CLIPLoader',
+          inputs: { clip_name: clip, type: clipType, device: 'default' },
+        }
 
     let vaeId: string
     if (needsVAELoader) {
