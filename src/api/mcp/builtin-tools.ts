@@ -609,10 +609,21 @@ async function executeWebSearch(args: Record<string, any>): Promise<string> {
     braveApiKey: searchSettings.braveApiKey || '',
     tavilyApiKey: searchSettings.tavilyApiKey || '',
   })
-  if (Array.isArray(data.results)) {
-    return data.results
+  if (Array.isArray(data.results) && data.results.length > 0) {
+    const lines = data.results
       .map((r: any, i: number) => `${i + 1}. ${r.title}\n   ${r.url}\n   ${r.snippet}`)
       .join('\n\n')
+    // When the configured paid provider failed we still return free-tier
+    // results, but say why the configured one didn't answer — a silently
+    // swallowed bad API key would look like "search is broken".
+    const note = typeof data.providerError === 'string' && data.providerError
+      ? `\n\n[Note: configured search provider failed — ${data.providerError}. Results above are from the free fallback (${data.provider || 'fallback'}).]`
+      : ''
+    return lines + note
+  }
+  if (typeof data.error === 'string' && data.error) {
+    const extra = typeof data.providerError === 'string' && data.providerError ? ` (${data.providerError})` : ''
+    return `Web search failed: ${data.error}${extra}`
   }
   return JSON.stringify(data)
 }
