@@ -13,11 +13,11 @@ export const DEFAULT_PERMISSIONS: PermissionMap = {
   web: 'auto',
   system: 'auto',
   image: 'confirm',
-  // Video generation is turned OFF for now (David 2026-06-04). 'blocked'
-  // removes video_generate from the tool list every model sees (see the
-  // tool-selection / tool-registry filters), so it is never offered. The
-  // chat Tools menu also locks the toggle. Flip back to 'confirm' to re-enable.
-  video: 'blocked',
+  // Video generation went LIVE in v2.5.3 (T2V via Wan/Hunyuan/AnimateDiff,
+  // I2V via SVD/FramePack — David 2026-06-10 "T2V und I2V klappen beide
+  // problemlos"). Same confirm-gate as image. permissionStore migrates the
+  // old persisted 'blocked' (which was UI-locked, never a user choice) up.
+  video: 'confirm',
   workflow: 'confirm',
 }
 

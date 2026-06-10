@@ -57,7 +57,7 @@ const CODEX_REVIEW_SYSTEM_PROMPT = `You are the Coding Agent in REVIEW MODE — 
 
 REVIEW MODE CONTRACT (binding):
 - You MAY call: file_read, file_list, file_search, git_status, git_log, git_diff, system_info, process_list, get_current_time, web_fetch, web_search.
-- You MUST NOT call: file_write, shell_execute, code_execute, run_tests, git_commit, git_push, gh_pr_create, image_generate, run_workflow, screenshot, delegate_task. If you call them, the harness will reject the call and tell the model "review-only mode" — wasted budget.
+- You MUST NOT call: file_write, shell_execute, code_execute, run_tests, git_commit, git_push, gh_pr_create, image_generate, video_generate, run_workflow, screenshot, delegate_task. If you call them, the harness will reject the call and tell the model "review-only mode" — wasted budget.
 - Output format: a markdown report with sections "## Summary", "## Findings (priority order)", "## Suggested follow-ups". For each finding cite the file + line range (path:line or path:start-end).
 - Be direct. No flattery, no boilerplate. If the code is fine, say so in one sentence and stop.`
 
@@ -85,6 +85,7 @@ Rules:
 - Chain tool calls: after each tool result, if there is another step left, IMMEDIATELY call the next tool
 - If a command fails, diagnose and retry with a different approach — don't hand back to the user unless truly stuck
 - Be concise in text. All the work happens in tool calls.
+- Asset generation: when the task needs an image or a short video (placeholder art, hero image, demo clip), call image_generate / video_generate as a real tool call — ComfyUI runs locally. To animate a generated image, call video_generate with inputImage set to that image's filename.
 - FINISH with a short natural-language sentence summarising what you did or found. NEVER end your turn with only a raw JSON object or a bare code block — the user needs a human-readable answer, not a data dump.`
 
 // Small-Model Mode (Knob 2): a lean Codex prompt (~500 chars vs ~1700 above)
@@ -108,8 +109,11 @@ Rules:
 // without a code duplicate. Kept under the same name to minimise diff.
 const streamWithTools = streamOllamaChatWithTools
 
-// Coding-relevant tool categories
-const CODEX_CATEGORIES = ['filesystem', 'terminal', 'system', 'web'] as const
+// Coding-relevant tool categories. image/video joined in v2.5.3 (David:
+// "Video generation auf simplen Prompt in Code und Agentmode") — they only
+// surface when the keyword router sees a creative intent in the prompt, so
+// pure coding turns keep the same lean tool list as before.
+const CODEX_CATEGORIES = ['filesystem', 'terminal', 'system', 'web', 'image', 'video'] as const
 
 // Tools blocked in Code-Review Mode (B13). The agent goes read-only —
 // it inspects the codebase and writes inline comments, but never
@@ -130,6 +134,7 @@ const REVIEW_MODE_FORBIDDEN_TOOLS = new Set([
   'gh_pr_create',
   'run_tests',
   'image_generate',
+  'video_generate',
   'run_workflow',
   // Parity with uselu's review blocklist — a reviewer must not capture the
   // screen or hand work off to a sub-agent that could mutate state.
@@ -590,11 +595,12 @@ export function useCodex() {
 
         if (strategy === 'native') {
           const lastUserMsg = messages.filter(m => m.role === 'user').pop()?.content || ''
-          // CODEX_CATEGORIES filter: Codex is a CODING agent — image_generate,
-          // screenshot, process_list, run_workflow are distractions that pollute
-          // the tool list for small/3B models. Filter the registry by category
-          // BEFORE keyword routing so the model only ever sees filesystem,
-          // terminal, system, and web tools.
+          // CODEX_CATEGORIES filter: Codex is a CODING agent — screenshot,
+          // run_workflow etc. are distractions that pollute the tool list for
+          // small/3B models. Filter the registry by category BEFORE keyword
+          // routing. image/video are in the set since v2.5.3, but the keyword
+          // router below only surfaces them on creative intents, so plain
+          // coding turns keep the lean list.
           const codexToolsAll = toolRegistry.getAll().filter(
             (t) => (CODEX_CATEGORIES as readonly string[]).includes(t.category),
           )
