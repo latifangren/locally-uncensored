@@ -12,6 +12,11 @@ export interface Message {
   id: string
   role: Role
   content: string
+  /** When set, the UI renders THIS instead of `content` for a user message.
+   *  Agent slash commands (v2.5.3): the user sees the short "/commit" they
+   *  typed, while `content` holds the full expanded instruction the model
+   *  actually receives. Display-only — never sent to the model. */
+  displayContent?: string
   thinking?: string
   timestamp: number
   images?: ImageAttachment[]

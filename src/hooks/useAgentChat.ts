@@ -163,7 +163,9 @@ export function useAgentChat() {
     // here with a CURATED allow-list (the 5 chat tools) + a chat-style prompt,
     // so web/file/image/video work without flipping to full Agent mode. When
     // unset, this is the normal autonomous-agent path (full tool catalog).
-    opts?: { curatedTools?: readonly string[]; chatToolsMode?: boolean },
+    // displayContent: a slash command shows the raw "/commit" the user typed
+    // while `userContent` carries the expanded instruction the model receives.
+    opts?: { curatedTools?: readonly string[]; chatToolsMode?: boolean; displayContent?: string },
   ) => {
     const { activeModel } = useModelStore.getState()
     const { settings } = useSettingsStore.getState()
@@ -309,6 +311,8 @@ export function useAgentChat() {
       id: uuid(),
       role: 'user' as const,
       content: userContent,
+      // Slash command: show "/commit" to the user, keep the expansion in content.
+      ...(opts?.displayContent ? { displayContent: opts.displayContent } : {}),
       images: userImages,
       timestamp: Date.now(),
     }

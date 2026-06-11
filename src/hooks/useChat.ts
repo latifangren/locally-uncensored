@@ -13,6 +13,7 @@ import { useAgentChat } from "./useAgentChat"
 import { useMemory } from "./useMemory"
 import { useAgentModeStore } from "../stores/agentModeStore"
 import { detectChatToolIntent, CHAT_TOOLS } from "../lib/chat-tool-intent"
+import { parseAgentCommand } from "../lib/agent-commands"
 import { getProviderForModel, getProviderIdFromModel } from "../api/providers"
 import { syncOllamaHealthFromError } from "../lib/sync-ollama-health"
 import { isThinkingCompatible, isPlainTextPlanner } from "../lib/model-compatibility"
@@ -40,6 +41,22 @@ export function useChat() {
     const { settings } = useSettingsStore.getState()
     const store = useChatStore.getState()
     const persona = useSettingsStore.getState().getActivePersona()
+
+    // Agent slash commands (David 2026-06-11): "/review", "/commit", "/test",
+    // … are shorthand for an AGENT task. Expand the template, enable agent mode
+    // for this conversation (so the run has the full tool catalog + the agent
+    // UI), and hand the expanded instruction to the agent executor. The raw
+    // "/cmd args" the user typed is shown as their message; the expansion drives
+    // the model. Unknown "/foo" returns null and falls through to normal chat.
+    if (activeModel) {
+      const slash = parseAgentCommand(content)
+      if (slash) {
+        let convId = store.activeConversationId
+        if (!convId) convId = store.createConversation(activeModel, persona?.systemPrompt || "")
+        useAgentModeStore.getState().setAgentModeActive(convId, true)
+        return agentChat.sendAgentMessage(slash.expanded, images, { displayContent: content })
+      }
+    }
 
     // Agent mode delegation: if active for this conversation, use agent chat
     if (store.activeConversationId && useAgentModeStore.getState().isActive(store.activeConversationId)) {

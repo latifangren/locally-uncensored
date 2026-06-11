@@ -90,7 +90,8 @@ export function MessageBubble({ message, onRegenerate, onEdit, pendingApprovalId
   }
 
   const startEdit = () => {
-    setEditContent(message.content)
+    // Edit the short slash command, not its expanded instruction.
+    setEditContent(message.displayContent || message.content)
     setIsEditing(true)
   }
 
@@ -242,7 +243,9 @@ export function MessageBubble({ message, onRegenerate, onEdit, pendingApprovalId
               </div>
             </div>
           ) : isUser ? (
-            <p className="text-[0.78rem] leading-relaxed text-gray-800 dark:text-gray-200 whitespace-pre-wrap">{message.content}</p>
+            // Slash command: show the short "/commit" (displayContent), not the
+            // long expanded instruction held in content (which drives the model).
+            <p className="text-[0.78rem] leading-relaxed text-gray-800 dark:text-gray-200 whitespace-pre-wrap">{message.displayContent || message.content}</p>
           ) : (
             // Answer-blocks (when present) already rendered the per-iteration
             // text chronologically above; skip message.content here to avoid
