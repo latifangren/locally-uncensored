@@ -936,7 +936,16 @@ function buildFramePackWorkflow(params: VideoParams, seed: number, nodes: Catego
   const samplerId = String(n++)
   const decodeId = String(n++)
 
-  workflow[modelId] = { class_type: 'LoadFramePackModel', inputs: { model: params.model, base_precision: 'bf16', quantization: 'disabled', load_device: 'main_device' } }
+  // VRAM-safe load (David 2026-06-11, live OOM on his RTX 3060 12GB):
+  // `quantization:'disabled' + base_precision:'bf16' + load_device:'main_device'`
+  // UPCAST the fp8 13B weights to bf16 (~26 GB) and put the whole transformer on
+  // the GPU at once → torch.OutOfMemoryError in LoadFramePackModel before a single
+  // step ran. The file is already fp8_e4m3fn, so keep it quantized and load to the
+  // OFFLOAD (CPU) device — FramePack's section sampler streams it onto the GPU a
+  // window at a time (gpu_memory_preservation governs the headroom). This is the
+  // documented low-VRAM combo and is what makes FramePack actually run on 12 GB
+  // (and down to ~6 GB) instead of OOMing on every consumer card.
+  workflow[modelId] = { class_type: 'LoadFramePackModel', inputs: { model: params.model, base_precision: 'bf16', quantization: 'fp8_e4m3fn', load_device: 'offload_device' } }
   // DualCLIPLoader with type "hunyuan_video" — CLIPLoader type "wan" creates Llama2 with 128256 vocab
   // but llava_llama3 has 128320 tokens, causing state_dict size mismatch. DualCLIPLoader handles both correctly.
   workflow[clipId] = { class_type: 'DualCLIPLoader', inputs: { clip_name1: 'clip_l.safetensors', clip_name2: 'llava_llama3_fp8_scaled.safetensors', type: 'hunyuan_video' } }
