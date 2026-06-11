@@ -455,6 +455,13 @@ pub async fn proxy_localhost_stream_chunked(
             break;
         }
     }
+    // Explicit EOF marker (empty chunk — data chunks are never empty, the
+    // loop above skips them). The JS side closes its ReadableStream on THIS,
+    // not on the command's return: WebView2 149 delivers queued channel
+    // messages AFTER the invoke result resolves (live find 2026-06-11), so
+    // closing on the result raced ahead of the data and silently dropped
+    // every chunk — chats showed the user message but never a reply.
+    let _ = on_chunk.send(Vec::new());
     Ok(())
 }
 

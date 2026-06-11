@@ -190,12 +190,33 @@ export async function localFetchStream(
     const stream = new ReadableStream<Uint8Array>({
       start(c) { ctrl = c; },
     });
+    const closeStream = () => {
+      if (closed) return;
+      closed = true;
+      try { ctrl?.close(); } catch { /* already closed */ }
+    };
     channel.onmessage = (chunk: number[]) => {
       if (closed) return;
+      // Empty chunk = Rust's explicit EOF marker (data chunks are never
+      // empty). Closing HERE instead of on the invoke result is the fix for
+      // the silent no-reply chats (live find 2026-06-11): WebView2 149
+      // delivers queued channel messages AFTER the invoke promise resolves,
+      // so the old `.then(close)` raced ahead of the data and dropped every
+      // chunk — the user message appeared, the reply never did.
+      if (!chunk || chunk.length === 0) {
+        closeStream();
+        return;
+      }
       try { ctrl?.enqueue(new Uint8Array(chunk)); } catch { /* reader gone */ }
     };
     void invoke("proxy_localhost_stream_chunked", { url, method, body: body || null, onChunk: channel })
-      .then(() => { closed = true; try { ctrl?.close(); } catch { /* already closed */ } })
+      .then(() => {
+        // Do NOT close here — the EOF marker does that (it may arrive after
+        // this resolves; see above). Grace fallback so a lost EOF can't leak
+        // the stream forever: anything still open 15s after the command
+        // returned closes with whatever was delivered by then.
+        setTimeout(closeStream, 15_000);
+      })
       .catch((err: unknown) => { closed = true; try { ctrl?.error(err); } catch { /* already errored */ } });
     return new Response(stream, { status: 200, headers: { "Content-Type": "application/x-ndjson" } });
   } catch (chanErr) {
