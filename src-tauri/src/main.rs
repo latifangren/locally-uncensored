@@ -93,6 +93,7 @@ fn main() {
             // Process management
             commands::process::start_ollama,
             commands::process::start_comfyui,
+            commands::process::check_flash_attention,
             commands::process::stop_comfyui,
             commands::process::comfyui_status,
             commands::process::find_comfyui,

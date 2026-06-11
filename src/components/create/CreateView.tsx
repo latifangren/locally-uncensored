@@ -285,6 +285,21 @@ export function CreateView() {
     }
   }, [connected])
 
+  // Flash-attention availability (David 2026-06-11): measured 4-5x faster
+  // WAN-class video sampling vs pytorch SDPA on a 12 GB 3060. The backend
+  // probes the SAME python that runs ComfyUI (cached, real import test) and
+  // start_comfyui auto-passes --use-flash-attention when present — this hint
+  // only nudges users who don't have it. One check per connect.
+  const [flashAttn, setFlashAttn] = useState<{ available: boolean; reason?: string } | null>(null)
+  useEffect(() => {
+    if (connected !== true || flashAttn !== null) return
+    let cancelled = false
+    backendCall('check_flash_attention')
+      .then((r: { available: boolean; reason?: string }) => { if (!cancelled) setFlashAttn(r) })
+      .catch(() => { /* probe unavailable — show nothing */ })
+    return () => { cancelled = true }
+  }, [connected, flashAttn])
+
   // Track when ComfyUI loading actually started (Bug B). Reset on connect.
   const isStartingNow = status?.starting || status?.processAlive
   useEffect(() => {
@@ -793,6 +808,24 @@ export function CreateView() {
               <AlertTriangle size={12} />
               No video models found
             </div>
+          )}
+
+          {/* Flash-attention nudge — deliberately colorless/minimal (David
+              2026-06-11). Only when the probe POSITIVELY said it's missing;
+              remote ComfyUI is excluded (we can't see that python). */}
+          {!showNoModelsEmptyState && mode === 'video' && connected === true && flashAttn?.available === false && flashAttn.reason !== 'remote' && (
+            <p className="px-1 text-[10px] leading-relaxed text-gray-500">
+              flash attention is not installed in ComfyUI's Python — video generation runs ~4× slower without it.{' '}
+              <a
+                href="https://huggingface.co/lldacing/flash-attention-windows-wheel"
+                target="_blank"
+                rel="noreferrer"
+                className="underline hover:text-gray-400"
+              >
+                prebuilt wheels
+              </a>
+              {' '}· pick the file matching your torch/CUDA/Python, pip install it into ComfyUI's Python, restart ComfyUI
+            </p>
           )}
 
           {/* I2V Image Upload — shown when SVD or FramePack model is selected */}

@@ -686,6 +686,107 @@ pub fn start_ollama(state: State<'_, AppState>) -> Result<serde_json::Value, Str
     }
 }
 
+/// Does `python` have a working flash-attn? Real import test (not pip-list):
+/// a half-installed or ABI-mismatched wheel fails the import, and we must
+/// never pass `--use-flash-attention` then — ComfyUI would error at startup.
+/// The import loads torch, so allow up to 25 s; timeout counts as absent.
+pub(crate) fn probe_flash_attention(python: &str) -> bool {
+    if python.is_empty() {
+        return false;
+    }
+    let mut cmd = Command::new(python);
+    cmd.args(["-c", "from flash_attn import flash_attn_func"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    let mut child = match cmd.spawn() {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
+    for _ in 0..125 {
+        match child.try_wait() {
+            Ok(Some(status)) => return status.success(),
+            Ok(None) => std::thread::sleep(std::time::Duration::from_millis(200)),
+            Err(_) => return false,
+        }
+    }
+    let _ = child.kill();
+    false
+}
+
+/// Probe with per-python cache (the import costs ~5-10 s; only the first
+/// check per python path pays it).
+fn flash_attention_cached(state: &AppState, python: &str) -> bool {
+    if let Some(v) = state.flash_attn_cache.lock().unwrap().get(python).copied() {
+        return v;
+    }
+    let v = probe_flash_attention(python);
+    state
+        .flash_attn_cache
+        .lock()
+        .unwrap()
+        .insert(python.to_string(), v);
+    v
+}
+
+/// Same bundled-portable → venv → system resolution order as start_comfyui,
+/// without the logging — used by check_flash_attention so the Create tab
+/// probes the EXACT interpreter that will run ComfyUI.
+fn resolve_comfyui_python(comfy_path: &str, system_python: String) -> String {
+    let portable_python = std::path::Path::new(comfy_path).parent().and_then(|p| {
+        let candidate = p.join("python_embeded").join("python.exe");
+        if candidate.exists() {
+            Some(candidate.to_string_lossy().to_string())
+        } else {
+            None
+        }
+    });
+    let bundled_python = portable_python.or_else(|| {
+        let candidate = std::path::Path::new(comfy_path)
+            .join("python_embeded")
+            .join("python.exe");
+        if candidate.exists() {
+            Some(candidate.to_string_lossy().to_string())
+        } else {
+            None
+        }
+    });
+    let venv_python =
+        crate::python::resolve_comfyui_venv_python(std::path::Path::new(comfy_path));
+    bundled_python.or(venv_python).unwrap_or(system_python)
+}
+
+/// Create-tab check (David 2026-06-11): flash-attn makes WAN-class video
+/// sampling 4-5x faster (measured 27 s/it vs 108-160 s/it on his RTX 3060,
+/// identical workload). The tab shows a minimal hint when it's missing.
+#[tauri::command]
+pub fn check_flash_attention(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+    {
+        let host = state.comfy_host.lock().unwrap().clone();
+        if !is_local_host(&host) {
+            return Ok(serde_json::json!({"available": false, "reason": "remote"}));
+        }
+    }
+    let comfy_path = state
+        .comfy_path
+        .lock()
+        .unwrap()
+        .clone()
+        .or_else(find_comfyui_path);
+    let Some(comfy_path) = comfy_path else {
+        return Ok(serde_json::json!({"available": false, "reason": "no_comfyui"}));
+    };
+    let system_python = state.python_bin.lock().unwrap().clone();
+    let python = resolve_comfyui_python(&comfy_path, system_python);
+    if python.is_empty() {
+        return Ok(serde_json::json!({"available": false, "reason": "no_python"}));
+    }
+    let available = flash_attention_cached(&state, &python);
+    Ok(serde_json::json!({"available": available, "python": python}))
+}
+
 #[tauri::command]
 pub fn start_comfyui(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
     // If user pointed LU at a remote ComfyUI, we have no local process to spawn.
@@ -793,6 +894,17 @@ pub fn start_comfyui(state: State<'_, AppState>) -> Result<serde_json::Value, St
     if needs_cpu_fallback {
         comfy_args.push("--cpu");
         println!("[ComfyUI] No NVIDIA driver detected — passing --cpu to ComfyUI (CPU inference fallback)");
+    }
+    // Auto-enable Flash Attention when the package actually imports in THIS
+    // python (David 2026-06-11: measured 4-5x faster WAN video sampling vs
+    // pytorch SDPA on a 12 GB 3060). ComfyUI only uses FA2 with the flag, so
+    // an installed wheel does nothing without this. The real-import probe
+    // guarantees we never pass the flag on a broken install (ComfyUI would
+    // error at startup); probe result is cached per python path. CPU mode
+    // skips it — flash-attn is CUDA-only.
+    if !needs_cpu_fallback && flash_attention_cached(&state, &python) {
+        comfy_args.push("--use-flash-attention");
+        println!("[ComfyUI] flash-attn detected in {} — enabling Flash Attention", python);
     }
     let mut cmd = Command::new(&python);
     cmd.args(&comfy_args)

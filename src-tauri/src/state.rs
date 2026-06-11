@@ -195,6 +195,11 @@ pub struct AppState {
     /// Default "auto" + empty indices = no env-var, runtime picks default
     /// (pre-v2.5.0 behaviour).
     pub gpu_selection: Mutex<GpuSelection>,
+    /// flash-attn probe results, keyed by python path (David 2026-06-11:
+    /// measured 4-5x faster WAN video sampling vs pytorch SDPA on a 3060).
+    /// The probe imports torch (~5-10 s), so only the first ComfyUI start /
+    /// Create-tab check per python pays it.
+    pub flash_attn_cache: Mutex<HashMap<String, bool>>,
 }
 
 impl AppState {
@@ -257,6 +262,7 @@ impl AppState {
             // Bug BB v2.5.0 — start in "auto" mode so existing installs are
             // unchanged until the user explicitly picks a GPU in Settings.
             gpu_selection: Mutex::new(GpuSelection::default()),
+            flash_attn_cache: Mutex::new(HashMap::new()),
         }
     }
 }
