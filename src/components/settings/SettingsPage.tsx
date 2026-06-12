@@ -1290,6 +1290,49 @@ export function SettingsPage() {
             </div>
             {voiceBusy && <p className="text-[0.55rem] text-gray-500 leading-snug">Downloading voice (~63 MB)…</p>}
             {voiceError && <p className="text-[0.55rem] text-red-400/90 leading-snug">{voiceError}</p>}
+
+            {/* TTS engine — bundled Piper, or an external OpenAI-compatible HTTP
+                endpoint like Kokoro-FastAPI (GitHub #58). */}
+            <div className="flex items-center justify-between gap-2 pt-1">
+              <span className="text-[0.7rem] text-gray-500">Engine</span>
+              <div className="flex items-center gap-1 text-[0.6rem]">
+                {(['piper', 'external'] as const).map((m) => (
+                  <button
+                    key={m}
+                    onClick={() => voiceSettings.updateVoiceSettings({ ttsMode: m })}
+                    className={
+                      'px-2 py-0.5 rounded border transition-colors ' +
+                      (voiceSettings.ttsMode === m
+                        ? 'bg-gray-200 dark:bg-white/15 text-gray-900 dark:text-white border-gray-300 dark:border-white/20'
+                        : 'text-gray-500 border-white/8 hover:text-gray-300')
+                    }
+                  >
+                    {m === 'piper' ? 'Piper neural' : 'External HTTP'}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {voiceSettings.ttsMode === 'external' && (
+              <div className="space-y-1.5">
+                <input
+                  value={voiceSettings.externalTtsUrl}
+                  onChange={(e) => voiceSettings.updateVoiceSettings({ externalTtsUrl: e.target.value })}
+                  placeholder="http://localhost:8880/v1/audio/speech"
+                  spellCheck={false}
+                  className="w-full px-2 py-1 rounded bg-transparent border border-white/8 text-[0.65rem] text-gray-300 placeholder-gray-600 focus:outline-none focus:border-white/20"
+                />
+                <input
+                  value={voiceSettings.externalTtsVoice}
+                  onChange={(e) => voiceSettings.updateVoiceSettings({ externalTtsVoice: e.target.value })}
+                  placeholder="voice name (e.g. af_bella, alloy)"
+                  spellCheck={false}
+                  className="w-full px-2 py-1 rounded bg-transparent border border-white/8 text-[0.65rem] text-gray-300 placeholder-gray-600 focus:outline-none focus:border-white/20"
+                />
+                <p className="text-[0.55rem] text-gray-500 leading-snug">
+                  Any OpenAI-compatible TTS endpoint (e.g. Kokoro-FastAPI). Used for read-aloud instead of Piper. Stays on your machine when the endpoint is local.
+                </p>
+              </div>
+            )}
           </Section>
 
           <Section title="Remote Access">

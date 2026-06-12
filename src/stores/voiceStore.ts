@@ -25,6 +25,13 @@ interface VoiceState {
   ttsVoice: string;
   ttsRate: number;
   ttsPitch: number;
+  /** TTS engine: bundled Piper (local) or a user-configured external HTTP
+   *  endpoint (OpenAI-compatible, e.g. Kokoro-FastAPI) — GitHub #58. */
+  ttsMode: "piper" | "external";
+  /** External TTS endpoint URL, e.g. http://localhost:8880/v1/audio/speech. */
+  externalTtsUrl: string;
+  /** Voice name passed to the external engine (e.g. "af_bella" / "alloy"). */
+  externalTtsVoice: string;
 
   // Actions
   setRecording: (recording: boolean) => void;
@@ -41,6 +48,9 @@ interface VoiceState {
       ttsVoice: string;
       ttsRate: number;
       ttsPitch: number;
+      ttsMode: "piper" | "external";
+      externalTtsUrl: string;
+      externalTtsVoice: string;
     }>
   ) => void;
   resetTransient: () => void;
@@ -73,6 +83,9 @@ export const useVoiceStore = create<VoiceState>()(
       ttsVoice: "",
       ttsRate: 1.0,
       ttsPitch: 1.0,
+      ttsMode: "piper",
+      externalTtsUrl: "",
+      externalTtsVoice: "",
 
       // Actions
       setRecording: (recording) => set({ isRecording: recording }),
@@ -101,6 +114,9 @@ export const useVoiceStore = create<VoiceState>()(
           ttsVoice: "",
           ttsRate: 1.0,
           ttsPitch: 1.0,
+          ttsMode: "piper",
+          externalTtsUrl: "",
+          externalTtsVoice: "",
         }),
     }),
     {
