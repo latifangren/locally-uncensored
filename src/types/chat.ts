@@ -33,6 +33,11 @@ export interface Message {
    *  typed, while `content` holds the full expanded instruction the model
    *  actually receives. Display-only — never sent to the model. */
   displayContent?: string
+  /** Coding-Agent slash command that triggered this assistant turn (e.g.
+   *  "review", "init"). When set, CodexView wraps the whole step transcript in a
+   *  collapsible tool-call-style window — default collapsed, live-streams while
+   *  running (David 2026-06-12). Undefined for normal coding instructions. */
+  slashCommand?: string
   thinking?: string
   timestamp: number
   images?: ImageAttachment[]

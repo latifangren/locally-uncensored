@@ -15,6 +15,7 @@ import { resolveWorkspace } from '../api/agents/workspace-resolve'
 import { useAgentModeStore } from '../stores/agentModeStore'
 import { loadLurules, renderRulesSection, type RulesReader } from '../lib/lurules'
 import { parseAgentCommand } from '../lib/agent-commands'
+import { useGenerationStore } from '../stores/generationStore'
 import { backendCall, isOllamaLocal } from '../api/backend'
 import { planWithArchitect, renderArchitectPlanSection } from '../api/agents/architect'
 import { fetchRepoMap, renderRepoMapSection } from '../api/agents/repo-map'
@@ -263,9 +264,12 @@ export function useCodex() {
       ...(displayInstruction ? { displayContent: displayInstruction } : {}),
     })
 
-    // Add empty assistant message
+    // Add empty assistant message. For a slash command, tag it so CodexView
+    // wraps the whole step transcript in a collapsible tool-call-style window
+    // (default collapsed; live-streams while running) — David 2026-06-12.
     const assistantMsg = {
       id: uuid(), role: 'assistant' as const, content: '', thinking: '', timestamp: Date.now(), agentBlocks: [],
+      ...(slash ? { slashCommand: slash.command.name } : {}),
     }
     useChatStore.getState().addMessage(convId, assistantMsg)
     let thinkingContent = ''
@@ -424,6 +428,10 @@ export function useCodex() {
     runningRef.current = true
     setIsRunning(true)
     codexStore.setThreadStatus(convId, 'running')
+    // Bind the generating flag to THIS conversation so the typing indicator +
+    // realtime counter show only in the coding chat that's actually running,
+    // not in every chat the user switches to (David 2026-06-12). Cleared below.
+    useGenerationStore.getState().setGenerating(convId, true)
 
     // Architect / RepoMap pre-pass (B8 + B9). Both inject into the
     // system prompt BEFORE the first iteration and surface a visible
@@ -951,7 +959,15 @@ export function useCodex() {
           // NOT match — only "verify the (correct) path/file/location" does.
           const asksForInfo = /\b(please provide|could you (?:please )?(?:provide|share|tell|give|specify|verify|confirm|clarify)|what(?:'s| is) the (?:path|file|name|location)|which file|can you (?:provide|share|specify|tell)|provide (?:the|me) (?:the )?(?:path|file|details|more)|(?:verify|confirm|clarify) (?:the )?(?:correct |right |exact |full )?(?:path|file ?path|location|directory|filename|file name)|need (?:the|more) (?:path|info|details|context))\b/i.test(turnContent)
           const emptyTurn = turnContent.trim().length === 0
-          if ((stalledNarration || asksForInfo || emptyTurn) && continueNudgesRemaining > 0) {
+          // Only nudge an empty turn when NOTHING has been produced yet (a true
+          // early stall). An empty turn AFTER a real answer means the model is
+          // finished — break immediately instead of spinning slow no-op nudge
+          // iterations that keep the typing dots up long after the answer is
+          // done (David 2026-06-12: "die punkte bleiben so lange obwohl keine
+          // antwort mehr kam"). Read-only report commands (/review, /explain …)
+          // legitimately end on a text answer + an empty follow-up turn.
+          const nudgeWorthy = stalledNarration || asksForInfo || (emptyTurn && !fullContent.trim())
+          if (nudgeWorthy && continueNudgesRemaining > 0) {
             continueNudgesRemaining--
             void diagLog('continue-nudge', { iter: i, remaining: continueNudgesRemaining, turnContentLen: turnContent.length })
             messages.push({
@@ -1398,6 +1414,7 @@ export function useCodex() {
       }
 
       setIsRunning(false)
+      useGenerationStore.getState().setGenerating(convId, false)
       runningRef.current = false
       abortRef.current = null
       clearActiveChatId()

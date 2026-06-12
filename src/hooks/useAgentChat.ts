@@ -7,6 +7,7 @@ import { resolveWorkspace } from '../api/agents/workspace-resolve'
 import { useAgentModeStore } from '../stores/agentModeStore'
 import { streamOllamaChatWithTools } from '../lib/ollama-stream-tools'
 import { useChatStore } from '../stores/chatStore'
+import { useGenerationStore } from '../stores/generationStore'
 import { agentVariantExists, createAgentVariant, getAgentModelName, canFixModel } from '../api/model-template-fix'
 import { useModelStore } from '../stores/modelStore'
 import { useSettingsStore } from '../stores/settingsStore'
@@ -454,6 +455,9 @@ export function useAgentChat() {
     abortRef.current = abort
     runningRef.current = true
     setIsAgentRunning(true)
+    // Bind the generating flag to THIS conversation so the typing indicator
+    // shows only in the chat whose turn is in flight (David 2026-06-12).
+    useGenerationStore.getState().setGenerating(convId, true)
     contentRef.current = ''
     thinkingRef.current = ''
     blocksRef.current = []
@@ -1289,6 +1293,7 @@ export function useAgentChat() {
       }
     } finally {
       setIsAgentRunning(false)
+      useGenerationStore.getState().setGenerating(convId, false)
       runningRef.current = false
       abortRef.current = null
       // Chat-tools artifact mode: attach any files the model "wrote" (captured

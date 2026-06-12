@@ -12,6 +12,7 @@ import { effectiveContextWindow } from "../lib/context-window"
 import { useAgentChat } from "./useAgentChat"
 import { useMemory } from "./useMemory"
 import { useAgentModeStore } from "../stores/agentModeStore"
+import { useGenerationStore } from "../stores/generationStore"
 import { detectChatToolIntent, CHAT_TOOLS } from "../lib/chat-tool-intent"
 import { getProviderForModel, getProviderIdFromModel } from "../api/providers"
 import { syncOllamaHealthFromError } from "../lib/sync-ollama-health"
@@ -190,6 +191,10 @@ export function useChat() {
     const abort = new AbortController()
     abortRef.current = abort
     setIsGenerating(true)
+    // Bind the generating flag to THIS conversation so the typing indicator
+    // only shows in the chat whose turn is in flight — not in every other chat
+    // the user switches to (David 2026-06-12). Cleared in finally.
+    useGenerationStore.getState().setGenerating(convId, true)
     setIsLoadingModel(true)
     useModelStore.getState().setIsModelLoading(true)
     contentRef.current = ""
@@ -421,6 +426,7 @@ export function useChat() {
       }
     } finally {
       setIsGenerating(false)
+      useGenerationStore.getState().setGenerating(convId, false)
       setIsLoadingModel(false)
       useModelStore.getState().setIsModelLoading(false)
       abortRef.current = null
