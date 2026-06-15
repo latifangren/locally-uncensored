@@ -238,7 +238,7 @@ PARAMETER num_ctx 32768</code></pre>
 
     <p>The 35B MoE coding-specialised variants (<code>qwen3.6:35b-a3b-coding-nvfp4</code>, <code>qwen3.6:35b-a3b-coding-mxfp8</code>) are tuned on the SWE-bench training data. On the SWE-bench-verified benchmark the coding NVFP4 variant scores in the same ballpark as Claude 3.5 Sonnet at a fraction of the inference cost.</p>
 
-    <p>For day-to-day coding inside <a href="codex-cli-universal-model-support.html">LU&rsquo;s Codex agent</a>, the 27B dense Q4_K_M is the better default &mdash; consistent quality, no MoE-routing variance. Switch to the 35B MoE coding variant for hard refactors or when SWE-bench-style multi-file changes are involved.</p>
+    <p>For day-to-day coding inside <a href="codex-cli-universal-model-support.html">LU&rsquo;s Coding Agent</a>, the 27B dense Q4_K_M is the better default &mdash; consistent quality, no MoE-routing variance. Switch to the 35B MoE coding variant for hard refactors or when SWE-bench-style multi-file changes are involved.</p>
 
     <h2>Comparison &mdash; Qwen 3.6 vs Qwen 3.5</h2>
 
