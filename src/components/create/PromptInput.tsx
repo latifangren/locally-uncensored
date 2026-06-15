@@ -64,7 +64,7 @@ export function PromptInput({ onGenerate, onCancel, disabled, imageModels, video
   }
 
   const subModeBtn = (active: boolean) =>
-    `px-1.5 h-[22px] text-[0.6rem] font-medium transition-colors ${
+    `px-2 h-full text-[0.6rem] font-medium transition-colors ${
       active
         ? 'bg-gray-200 dark:bg-white/10 text-gray-900 dark:text-white'
         : 'text-gray-500 hover:text-gray-800 dark:hover:text-gray-200'
@@ -73,16 +73,17 @@ export function PromptInput({ onGenerate, onCancel, disabled, imageModels, video
   return (
     <div className="w-full max-w-[70%] mx-auto">
       <div className="flex flex-col rounded-lg border bg-gray-50 dark:bg-white/[0.03] border-gray-200 dark:border-white/[0.06] px-2.5 py-1 transition-colors">
-        {/* Input row — everything inline, chat style */}
-        <div className="flex items-end gap-2">
+        {/* Input row — everything inline, chat style. items-center + a single
+            28px control height keeps every element on the same line/height. */}
+        <div className="flex items-center gap-2">
           {/* T2I/I2I resp. T2V/I2V sub-mode switch */}
           {mode === 'image' ? (
-            <div className="flex items-center rounded-md border border-gray-200 dark:border-white/10 overflow-hidden shrink-0 mb-0.5">
+            <div className="flex items-center rounded-md border border-gray-200 dark:border-white/10 overflow-hidden shrink-0 h-[28px]">
               <button onClick={() => setImageSubMode('text2img')} className={subModeBtn(imageSubMode === 'text2img')} title="Text to Image">T2I</button>
               <button onClick={() => setImageSubMode('img2img')} className={subModeBtn(imageSubMode === 'img2img')} title="Image to Image">I2I</button>
             </div>
           ) : (
-            <div className="flex items-center rounded-md border border-gray-200 dark:border-white/10 overflow-hidden shrink-0 mb-0.5">
+            <div className="flex items-center rounded-md border border-gray-200 dark:border-white/10 overflow-hidden shrink-0 h-[28px]">
               <button onClick={() => setVideoSubMode('t2v')} className={subModeBtn(videoSubMode === 't2v')} title="Text to Video">T2V</button>
               <button onClick={() => setVideoSubMode('i2v')} className={subModeBtn(videoSubMode === 'i2v')} title="Image to Video">I2V</button>
             </div>
@@ -95,7 +96,7 @@ export function PromptInput({ onGenerate, onCancel, disabled, imageModels, video
             onKeyDown={handleKeyDown}
             placeholder="Describe what you want to create..."
             rows={1}
-            className="flex-1 bg-transparent resize-none text-gray-800 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-600 focus:outline-none text-[0.75rem] leading-relaxed max-h-[160px] py-1.5 disabled:opacity-50 scrollbar-thin"
+            className="flex-1 bg-transparent resize-none text-gray-800 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-600 focus:outline-none text-[0.75rem] leading-relaxed max-h-[160px] py-1 disabled:opacity-50 scrollbar-thin"
             disabled={isGenerating || disabled}
             aria-label="Image or video generation prompt"
           />
@@ -103,7 +104,7 @@ export function PromptInput({ onGenerate, onCancel, disabled, imageModels, video
           {/* Negative-prompt toggle — pill like the chat Think toggle */}
           <button
             onClick={() => setShowNegative(!showNegative)}
-            className={`flex items-center gap-1 px-1.5 py-1.5 rounded-md transition-all shrink-0 text-[0.6rem] font-medium ${
+            className={`flex items-center gap-1 px-2 h-[28px] rounded-md transition-all shrink-0 text-[0.6rem] font-medium ${
               showNegative || negativePrompt.trim()
                 ? 'bg-white/10 text-gray-800 dark:text-gray-200 border border-gray-300 dark:border-white/15'
                 : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-white/5'
@@ -119,7 +120,7 @@ export function PromptInput({ onGenerate, onCancel, disabled, imageModels, video
           {promptHistory.length > 0 && (
             <button
               onClick={() => setShowHistory(!showHistory)}
-              className={`p-1.5 rounded-md transition-all shrink-0 ${showHistory ? 'bg-white/10 text-gray-700 dark:text-gray-200' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-white/5'}`}
+              className={`h-[28px] w-[28px] flex items-center justify-center rounded-md transition-all shrink-0 ${showHistory ? 'bg-white/10 text-gray-700 dark:text-gray-200' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-white/5'}`}
               title="Prompt history"
               aria-label="Prompt history"
             >
@@ -131,7 +132,7 @@ export function PromptInput({ onGenerate, onCancel, disabled, imageModels, video
           {prompt.trim() && !isGenerating && (
             <button
               onClick={() => setPrompt('')}
-              className="p-1.5 rounded-md text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-white/5 transition-all shrink-0"
+              className="h-[28px] w-[28px] flex items-center justify-center rounded-md text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-white/5 transition-all shrink-0"
               aria-label="Clear prompt"
             >
               <X size={13} />
@@ -146,7 +147,7 @@ export function PromptInput({ onGenerate, onCancel, disabled, imageModels, video
               disabled={isGenerating || disabled}
               title={activeModelValue || `Select ${mode} model`}
               aria-label={`${mode} model`}
-              className="max-w-[140px] h-[26px] px-1.5 rounded-md bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10 text-gray-700 dark:text-gray-200 text-[0.65rem] focus:outline-none focus:border-gray-400 dark:focus:border-white/20 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shrink-0 mb-0.5"
+              className="max-w-[140px] h-[28px] px-1.5 rounded-md bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10 text-gray-700 dark:text-gray-200 text-[0.65rem] focus:outline-none focus:border-gray-400 dark:focus:border-white/20 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
             >
               {modelOptions.map((m) => (
                 <option key={m.name} value={m.name}>{m.name.replace(/\.[^.]+$/, '')}</option>
@@ -157,7 +158,7 @@ export function PromptInput({ onGenerate, onCancel, disabled, imageModels, video
           {isGenerating ? (
             <motion.button
               onClick={onCancel}
-              className="flex items-center gap-1.5 px-2.5 h-[26px] rounded-md bg-red-500/15 text-red-500 dark:text-red-400 hover:bg-red-500/25 text-[0.65rem] font-medium transition-all shrink-0 mb-0.5"
+              className="flex items-center gap-1.5 px-2.5 h-[28px] rounded-md bg-red-500/15 text-red-500 dark:text-red-400 hover:bg-red-500/25 text-[0.65rem] font-medium transition-all shrink-0"
               whileTap={{ scale: 0.95 }}
               aria-label="Cancel generation"
             >
@@ -167,7 +168,7 @@ export function PromptInput({ onGenerate, onCancel, disabled, imageModels, video
             <motion.button
               onClick={onGenerate}
               disabled={!prompt.trim() || disabled}
-              className="flex items-center gap-1.5 px-2.5 h-[26px] rounded-md bg-gray-900 text-white dark:bg-white/10 dark:text-white hover:bg-gray-700 dark:hover:bg-white/15 disabled:opacity-30 disabled:cursor-not-allowed text-[0.65rem] font-medium transition-all shrink-0 mb-0.5"
+              className="flex items-center gap-1.5 px-2.5 h-[28px] rounded-md bg-gray-900 text-white dark:bg-white/10 dark:text-white hover:bg-gray-700 dark:hover:bg-white/15 disabled:opacity-30 disabled:cursor-not-allowed text-[0.65rem] font-medium transition-all shrink-0"
               whileTap={{ scale: 0.95 }}
               title={`${isMac ? 'Cmd' : 'Ctrl'}+Enter`}
               aria-label="Generate"
