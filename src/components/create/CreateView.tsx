@@ -216,8 +216,10 @@ export function CreateView() {
   const [killing, setKilling] = useState(false)
   const [i2vUploading, setI2vUploading] = useState(false)
   const [i2vDragOver, setI2vDragOver] = useState(false)
+  const [i2vUploadError, setI2vUploadError] = useState<string | null>(null)
   const [i2iUploading, setI2iUploading] = useState(false)
   const [i2iDragOver, setI2iDragOver] = useState(false)
+  const [i2iUploadError, setI2iUploadError] = useState<string | null>(null)
   const installPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   // Imperative refs for the file inputs. The previous label-wraps-input
@@ -369,12 +371,18 @@ export function CreateView() {
 
   const handleI2vUpload = async (file: File) => {
     if (!file.type.startsWith('image/')) return
+    setI2vUploadError(null)
     setI2vUploading(true)
     try {
       const filename = await uploadImage(file)
       setI2vImage(filename)
     } catch (err) {
+      // Surface the real reason in the UI, not just the log (konata 2026-06-14):
+      // uploadImage throws a specific message (empty/unreadable source, or
+      // ComfyUI's actual error body) — show it so the user sees + can report
+      // WHY, instead of the upload silently doing nothing.
       log.error('[CreateView] I2V image upload failed', { err })
+      setI2vUploadError(err instanceof Error ? err.message : String(err))
     }
     setI2vUploading(false)
   }
@@ -388,12 +396,14 @@ export function CreateView() {
 
   const handleI2iUpload = async (file: File) => {
     if (!file.type.startsWith('image/')) return
+    setI2iUploadError(null)
     setI2iUploading(true)
     try {
       const filename = await uploadImage(file)
       setI2iImage(filename)
     } catch (err) {
       log.error('[CreateView] I2I image upload failed', { err })
+      setI2iUploadError(err instanceof Error ? err.message : String(err))
     }
     setI2iUploading(false)
   }
@@ -884,6 +894,9 @@ export function CreateView() {
                   </span>
                 </button>
               )}
+              {i2vUploadError && (
+                <p className="px-3 pb-2 text-[10px] text-red-400 leading-snug break-words">{i2vUploadError}</p>
+              )}
               <input
                 ref={i2vFileInputRef}
                 type="file" accept="image/*"
@@ -961,6 +974,9 @@ export function CreateView() {
                       onChange={(e) => { const f = e.target.files?.[0]; if (f) handleI2iUpload(f); e.target.value = '' }}
                     />
                   </button>
+                )}
+                {i2iUploadError && (
+                  <p className="px-3 pb-2 text-[10px] text-red-400 leading-snug break-words">{i2iUploadError}</p>
                 )}
               </div>
 
