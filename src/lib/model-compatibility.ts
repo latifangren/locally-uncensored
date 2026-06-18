@@ -15,6 +15,12 @@ const AGENT_COMPATIBLE = [
   'qwen3.6', 'qwen3-coder-next', 'qwen3-coder', 'qwen3', 'qwen2.5',
   'llama3.1', 'llama3.2', 'llama3.3', 'llama4',
   'mistral', 'mistral-nemo', 'mistral-small', 'mistral-large',
+  // Ministral (Mistral's 3B/8B edge line) has native tool calling like its
+  // bigger siblings but the name isn't a substring of 'mistral', so it was
+  // wrongly rejected from Agent Mode (AnonN10, GitHub #65 — custom
+  // ministral-8b GGUF, "incompatible with agent mode even though it supports
+  // tool calls"). normalizeFamily keeps the leading 'ministral' token intact.
+  'ministral',
   'command-r',
   'phi-4', 'phi4',
   'deepseek-v2.5', 'deepseek-v3',

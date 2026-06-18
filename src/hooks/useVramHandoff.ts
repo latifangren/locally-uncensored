@@ -4,21 +4,28 @@
  * Subscribes to the orchestrator's EventTarget channel (src/api/vram-handoff.ts
  * `onHandoff`) and maps the latest phase into component state for VramSwitchCard.
  *
- * Design note — the card is about the SWAP, not the generation. When the
- * orchestrator decides the models co-exist in VRAM (auto-fits / cloud / remote /
- * never), no `freeing_vram` phase ever fires — it goes deciding → generating →
- * done. In that case `swapping` stays false and the card hides itself, leaving
- * the normal ToolCallBlock spinner to convey "running". Only an ACTUAL eviction
- * (`freeing_vram` observed) flips `swapping` true and reveals the card. The
- * `done`/`error` terminal events reset it.
+ * The card shows an HONEST per-generation status. Two cases:
+ *   - An actual VRAM swap (heavy video, or image on a tight card): the
+ *     orchestrator fires `freeing_vram` first → `evicted` becomes true → the
+ *     card uses "freeing VRAM / VRAM swap in progress / restoring chat" copy.
+ *   - No eviction (the common image case — the small chat model and the SDXL
+ *     checkpoint co-exist): no `freeing_vram` fires, so `evicted` stays false,
+ *     but the card STILL shows from `loading_image_model` onward with plain
+ *     "loading the image model / generating" copy and NO false "freeing VRAM"
+ *     claim (David 2026-06-16: the image tool should show status too, honestly).
+ * `done`/`error` are terminal and reset the state.
  */
 
 import { useEffect, useState } from 'react'
 import { onHandoff, type HandoffPhase } from '../api/vram-handoff'
 
 export interface VramHandoffState {
-  /** True only while an actual VRAM swap is in flight (eviction observed, not yet terminal). */
-  swapping: boolean
+  /** True while a generation status card should show (loading the gen model →
+   *  generating → restoring), regardless of whether a VRAM swap happened. */
+  active: boolean
+  /** True once an actual VRAM eviction happened this cycle (`freeing_vram`
+   *  observed). Drives the "swap" wording vs. plain loading/generating copy. */
+  evicted: boolean
   /** Latest phase seen. */
   phase: HandoffPhase | null
   /** 'image' | 'video' for copy tailoring. */
@@ -27,7 +34,7 @@ export interface VramHandoffState {
   detail: string | null
 }
 
-const INITIAL: VramHandoffState = { swapping: false, phase: null, kind: null, detail: null }
+const INITIAL: VramHandoffState = { active: false, evicted: false, phase: null, kind: null, detail: null }
 
 export function useVramHandoff(): VramHandoffState {
   const [state, setState] = useState<VramHandoffState>(INITIAL)
@@ -35,12 +42,17 @@ export function useVramHandoff(): VramHandoffState {
   useEffect(() => {
     const unsub = onHandoff((d) => {
       setState((prev) => {
-        // A swap is "real" once we see freeing_vram; it ends on a terminal event.
-        let swapping = prev.swapping
-        if (d.phase === 'freeing_vram') swapping = true
-        if (d.terminal) swapping = false
+        let active = prev.active
+        let evicted = prev.evicted
+        // A real swap is marked by `freeing_vram`; the card becomes visible as
+        // soon as the gen starts loading its model, so a no-eviction image gen
+        // still gets an honest "loading / generating" banner.
+        if (d.phase === 'freeing_vram') { active = true; evicted = true }
+        if (d.phase === 'loading_image_model' || d.phase === 'generating') active = true
+        if (d.terminal) active = false
         return {
-          swapping,
+          active,
+          evicted,
           phase: d.phase,
           kind: d.kind ?? prev.kind,
           detail: d.detail ?? null,

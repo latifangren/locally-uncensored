@@ -47,16 +47,23 @@ export function Sidebar() {
     : modeConversations
 
   const handleNewChat = () => {
-    if (activeModel) {
-      // David's request: persona starts OFF on every new chat. We still
-      // store the globally-selected persona's prompt as the conv's
-      // systemPrompt (so toggling personaEnabled later "just works"
-      // without re-reading global state), but useChat / useAgentChat
-      // only apply it when personaEnabled === true.
-      const persona = personasEnabled ? getActivePersona() : null
-      createConversation(activeModel, persona?.systemPrompt || '', chatMode)
-      setView('chat')
+    if (!activeModel) {
+      // No model is active — clicking New Chat used to silently do nothing
+      // (mylogz, Discord 2026-06-17: "cant make a new chat"). That happens
+      // when no model is installed/selected, or the model list hasn't
+      // populated yet. Send the user to the Models page where they can
+      // install or pick one, instead of a dead click with no feedback.
+      setView('models')
+      return
     }
+    // David's request: persona starts OFF on every new chat. We still
+    // store the globally-selected persona's prompt as the conv's
+    // systemPrompt (so toggling personaEnabled later "just works"
+    // without re-reading global state), but useChat / useAgentChat
+    // only apply it when personaEnabled === true.
+    const persona = personasEnabled ? getActivePersona() : null
+    createConversation(activeModel, persona?.systemPrompt || '', chatMode)
+    setView('chat')
   }
 
   const handleDispatch = async (mode: 'lan' | 'internet') => {
@@ -543,6 +550,7 @@ export function Sidebar() {
             ) : (
               <button
                 onClick={handleNewChat}
+                title={activeModel ? 'Start a new chat' : 'Pick or install a model first'}
                 className="w-full flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-md text-[0.65rem] font-medium bg-gray-50 dark:bg-white/[0.03] hover:bg-gray-100 dark:hover:bg-white/[0.05] text-gray-800 dark:text-gray-200 border border-gray-200 dark:border-white/[0.06] hover:border-gray-300 dark:hover:border-white/[0.1] transition-all"
               >
                 <Plus size={12} />

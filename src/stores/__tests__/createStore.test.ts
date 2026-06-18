@@ -507,6 +507,17 @@ describe('createStore', () => {
     })
   })
 
+  // ── clearPromptHistory (GitHub #66) ────────────────────────
+
+  describe('clearPromptHistory', () => {
+    it('wipes all prompt history', () => {
+      useCreateStore.getState().addToPromptHistory('one')
+      useCreateStore.getState().addToPromptHistory('two')
+      useCreateStore.getState().clearPromptHistory()
+      expect(useCreateStore.getState().promptHistory).toEqual([])
+    })
+  })
+
   // ── setIsGenerating ────────────────────────────────────────
 
   describe('setIsGenerating', () => {

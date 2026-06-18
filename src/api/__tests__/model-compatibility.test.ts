@@ -38,6 +38,15 @@ describe('isAgentCompatible', () => {
       expect(isAgentCompatible('mistral-small:22b')).toBe(true)
     })
 
+    it('ministral models are compatible (AnonN10, GitHub #65)', () => {
+      // Ministral (Mistral's 3B/8B edge line) has native tool calling, but the
+      // name isn't a substring of "mistral" so Agent Mode wrongly rejected it.
+      expect(isAgentCompatible('ministral-8b:latest')).toBe(true)
+      expect(isAgentCompatible('ministral-3b:latest')).toBe(true)
+      // AnonN10's exact custom-GGUF tag shape from the issue.
+      expect(isAgentCompatible('ministral-8b-instruct-2410-abliterated-i1-iq3xxs:latest')).toBe(true)
+    })
+
     it('gemma4 models are compatible (native tool calling)', () => {
       expect(isAgentCompatible('gemma4:e2b')).toBe(true)
       expect(isAgentCompatible('gemma4:e4b')).toBe(true)

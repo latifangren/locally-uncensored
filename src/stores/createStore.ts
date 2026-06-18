@@ -145,6 +145,8 @@ interface CreateState {
   removeFromGallery: (id: string) => void
   clearGallery: () => void
   addToPromptHistory: (prompt: string) => void
+  /** GitHub #66 (rubacc80-png) — wipe the Create-tab prompt history. */
+  clearPromptHistory: () => void
   setImageModelList: (list: ClassifiedModel[]) => void
   setVideoModelList: (list: ClassifiedModel[]) => void
   setComfyRunning: (running: boolean) => void
@@ -298,6 +300,7 @@ export const useCreateStore = create<CreateState>()(
         const filtered = s.promptHistory.filter(p => p !== prompt)
         return { promptHistory: [prompt, ...filtered].slice(0, 50) }
       }),
+      clearPromptHistory: () => set({ promptHistory: [] }),
       setImageModelList: (list) => set({ imageModelList: list }),
       setVideoModelList: (list) => set({ videoModelList: list }),
       setComfyRunning: (running) => set({ comfyRunning: running }),

@@ -366,13 +366,35 @@ export async function parseExportFile(file: File): Promise<ParseResult> {
     const basename = (p: string) => (p.split('/').pop() || '').toLowerCase()
     const isJson = (p: string) => p.toLowerCase().endsWith('.json')
 
-    // 1) Prefer any file whose basename is exactly conversations.json, wherever
-    //    it sits in the tree (handles the dated-folder nesting). Return the
-    //    first that yields at least one conversation.
-    for (const e of entries.filter(e => basename(e.path) === 'conversations.json')) {
-      const text = await e.entry.async('string')
-      const res = parseJsonText(text)
-      if (res.conversations.length > 0) return res
+    // 1) Conversations live in one or more files named conversations.json or,
+    //    for large exports, sharded as conversations-000.json,
+    //    conversations-001.json, … (ChatGPT splits at ~100 chats per shard).
+    //    Parse EVERY such file and MERGE them, wherever they sit in the tree
+    //    (handles the dated-folder nesting). mikes_pp, Discord 2026-06-17:
+    //    only the first 100 chats imported because we returned on the first
+    //    file and conversations-001.json was ignored.
+    const isConversationsFile = (p: string) => {
+      const b = basename(p)
+      return b === 'conversations.json' || /^conversations-\d+\.json$/.test(b)
+    }
+    const convFiles = entries
+      .filter(e => isConversationsFile(e.path))
+      // Deterministic shard order: conversations.json, then -000, -001, …
+      .sort((a, b) => basename(a.path).localeCompare(basename(b.path), 'en', { numeric: true }))
+    if (convFiles.length > 0) {
+      const merged: NormalisedConversation[] = []
+      let skipped = 0
+      let platform: ChatbotPlatform = 'unknown'
+      for (const e of convFiles) {
+        const text = await e.entry.async('string')
+        const res = parseJsonText(text)
+        merged.push(...res.conversations)
+        skipped += res.skipped
+        if (res.detectedPlatform !== 'unknown') platform = res.detectedPlatform
+      }
+      if (merged.length > 0) {
+        return { conversations: merged, skipped, detectedPlatform: platform }
+      }
     }
     // 2) Parse-and-pick: try every JSON file and keep whichever produces the
     //    most conversations. We deliberately do NOT rank by file size via

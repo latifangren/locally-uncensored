@@ -128,6 +128,13 @@ export const useVoiceStore = create<VoiceState>()(
         ttsVoice: state.ttsVoice,
         ttsRate: state.ttsRate,
         ttsPitch: state.ttsPitch,
+        // GitHub #58 — persist the engine choice + external endpoint. Without
+        // these the store reverts to ttsMode:"piper" with an empty URL on the
+        // next launch, so picking "External HTTP" never sticks and the output
+        // stays Piper (hussam-batshon: "after saving it still shows Piper").
+        ttsMode: state.ttsMode,
+        externalTtsUrl: state.externalTtsUrl,
+        externalTtsVoice: state.externalTtsVoice,
       }),
     }
   )

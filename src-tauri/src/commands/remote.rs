@@ -3904,6 +3904,30 @@ pub async fn start_remote_server(
         remote.handle = Some(handle);
     }
 
+    // #aldrich (Discord 2026-06-17, STILL "Error HTTP:503" on the phone after
+    // the 2.5.4 tunnel-readiness poll): that earlier poll only checks the
+    // Cloudflare EDGE url, never the LOCAL origin. axum::serve binds inside the
+    // spawned task above, which may not be listening yet when we return here —
+    // so the tunnel edge (or a fast phone on LAN) can hit a not-yet-bound origin
+    // and Cloudflare relays the upstream 503. Gate the return on our OWN loopback
+    // /remote-api/status (public, no auth, instant) so the server is provably
+    // serving before the frontend ever starts the tunnel or shows the QR. Use
+    // 127.0.0.1 (IPv4) not localhost to avoid the slow ::1 refused-connect path.
+    // Bounded: proceed anyway after the budget rather than hang (old behaviour).
+    if let Ok(client) = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_millis(400))
+        .no_proxy()
+        .build()
+    {
+        let probe = format!("http://127.0.0.1:{}/remote-api/status", port);
+        for _ in 0..25 { // ~25 × 200 ms ≈ 5 s readiness budget
+            match client.get(&probe).send().await {
+                Ok(resp) if resp.status().is_success() => break,
+                _ => tokio::time::sleep(std::time::Duration::from_millis(200)).await,
+            }
+        }
+    }
+
     let lan_ip = local_ip_address::local_ip()
         .map(|ip| ip.to_string())
         .unwrap_or_else(|_| "127.0.0.1".to_string());

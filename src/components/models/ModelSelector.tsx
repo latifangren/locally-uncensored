@@ -544,6 +544,8 @@ export function ModelSelector() {
       {/* ── Trigger Button ── */}
       <button
         onClick={() => setOpen(!open)}
+        title={activeModel ? `Model: ${activeDisplayName} — click to switch` : 'Select a chat model'}
+        aria-label="Select chat model"
         className={`
           group flex items-center gap-1.5 h-[26px] px-2 rounded-md
           bg-transparent border transition-all text-[0.7rem]

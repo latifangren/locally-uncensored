@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Sparkles, Square, History, X, Minus } from 'lucide-react'
+import { Sparkles, Square, History, X, Minus, Trash2 } from 'lucide-react'
 import { useCreateStore } from '../../stores/createStore'
 import { classifyModel, isI2VModel } from '../../api/comfyui'
 import type { ClassifiedModel } from '../../api/comfyui'
@@ -23,7 +23,7 @@ export function PromptInput({ onGenerate, onCancel, disabled, imageModels, video
   const {
     prompt, negativePrompt, isGenerating, promptHistory, mode, imageSubMode, videoSubMode,
     imageModel, videoModel, setPrompt, setNegativePrompt, setImageSubMode, setVideoSubMode,
-    setImageModel, setVideoModel,
+    setImageModel, setVideoModel, clearPromptHistory,
   } = useCreateStore()
 
   // Model picker (lives right next to Generate). Video models are filtered by
@@ -209,17 +209,31 @@ export function PromptInput({ onGenerate, onCancel, disabled, imageModels, video
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
               exit={{ opacity: 0, height: 0 }}
-              className="border-t border-gray-100 dark:border-white/5 mt-1 max-h-28 overflow-y-auto scrollbar-thin"
+              className="border-t border-gray-100 dark:border-white/5 mt-1"
             >
-              {promptHistory.map((p, i) => (
+              {/* GitHub #66 (rubacc80-png) — let users wipe the prompt history. */}
+              <div className="flex items-center justify-between px-1.5 pt-1 pb-0.5">
+                <span className="text-[0.55rem] uppercase tracking-wide text-gray-400 dark:text-gray-600">Recent prompts</span>
                 <button
-                  key={i}
-                  onClick={() => selectFromHistory(p)}
-                  className="w-full text-left px-1.5 py-1 text-[0.65rem] text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/5 rounded truncate transition-colors"
+                  onClick={() => clearPromptHistory()}
+                  className="flex items-center gap-0.5 text-[0.55rem] text-gray-500 hover:text-red-500 dark:hover:text-red-400 transition-colors"
+                  title="Clear prompt history"
+                  aria-label="Clear prompt history"
                 >
-                  {p}
+                  <Trash2 size={9} /> Clear
                 </button>
-              ))}
+              </div>
+              <div className="max-h-24 overflow-y-auto scrollbar-thin">
+                {promptHistory.map((p, i) => (
+                  <button
+                    key={i}
+                    onClick={() => selectFromHistory(p)}
+                    className="w-full text-left px-1.5 py-1 text-[0.65rem] text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/5 rounded truncate transition-colors"
+                  >
+                    {p}
+                  </button>
+                ))}
+              </div>
             </motion.div>
           )}
         </AnimatePresence>

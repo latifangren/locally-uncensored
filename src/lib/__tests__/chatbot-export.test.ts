@@ -264,4 +264,32 @@ describe('parseExportFile — ChatGPT .zip with dated top-level folder', () => {
     expect(res.conversations).toHaveLength(1)
     expect(res.conversations[0].platform).toBe('chatgpt')
   })
+
+  it('merges every conversations-NNN.json shard (large export split at 100 chats)', async () => {
+    // ChatGPT splits big histories into conversations-000.json,
+    // conversations-001.json, … We must import ALL of them, not just the first
+    // (mikes_pp, Discord 2026-06-17: "only the 100 in conversations-000.json
+    // imported, none from conversations-001.json").
+    const folder = '1716800000-shard'
+    const oneChat = (title: string, part: string) => JSON.stringify([{
+      title,
+      create_time: 1700000000.0,
+      update_time: 1700001000.0,
+      mapping: {
+        root: { id: 'root', message: null, parent: null, children: ['u1'] },
+        u1: { id: 'u1', message: { id: 'u1', author: { role: 'user' }, create_time: 1700000010.0, content: { content_type: 'text', parts: [part] } }, parent: 'root', children: [] },
+      },
+    }])
+    const file = await makeZipFile({
+      [`${folder}/conversations-000.json`]: oneChat('Shard one chat', 'hi from shard one'),
+      [`${folder}/conversations-001.json`]: oneChat('Shard two chat', 'hi from shard two'),
+      [`${folder}/user.json`]: JSON.stringify({ id: 'user-1' }),
+    }, 'multi-shard-export.zip')
+    const res = await parseExportFile(file)
+    expect(res.detectedPlatform).toBe('chatgpt')
+    expect(res.conversations).toHaveLength(2)
+    const titles = res.conversations.map((c) => c.title)
+    expect(titles).toContain('Shard one chat')
+    expect(titles).toContain('Shard two chat')
+  })
 })

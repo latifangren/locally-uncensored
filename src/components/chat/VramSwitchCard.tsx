@@ -8,10 +8,13 @@
  * conversation intact, NOT speed, so the copy says "~30-90s" plainly and never
  * implies a seamless zero-latency experience.
  *
- * Visibility: only shown when an ACTUAL swap is happening (the hook flips
- * `swapping` true on the first `freeing_vram` event). When the models fit
- * together (auto-decision, cloud, remote, or 'never' mode) no eviction occurs,
- * the card stays hidden, and the normal ToolCallBlock spinner conveys progress.
+ * Visibility: shown for the whole generation (model loading → generating →
+ * restoring), for image AND video. When an actual VRAM eviction happens
+ * (`evicted`) the copy talks about freeing VRAM / the swap; when the models
+ * co-exist and nothing is evicted (the common image case) it shows plain
+ * "loading the image model / generating" with no false "freeing VRAM" claim
+ * (David 2026-06-16). Cloud/remote/'never' generations emit no phases at all,
+ * so the card stays hidden there and the ToolCallBlock spinner conveys progress.
  */
 
 import { motion, AnimatePresence } from 'framer-motion'
@@ -19,7 +22,7 @@ import { Loader2, Cpu, Check } from 'lucide-react'
 import { useVramHandoff } from '../../hooks/useVramHandoff'
 import type { HandoffPhase } from '../../api/vram-handoff'
 
-function copyFor(phase: HandoffPhase | null, kind: 'image' | 'video' | null, detail: string | null): { text: string; sub?: string; done?: boolean } {
+function copyFor(phase: HandoffPhase | null, kind: 'image' | 'video' | null, detail: string | null, evicted: boolean): { text: string; sub?: string; done?: boolean } {
   const what = kind === 'video' ? 'video' : 'image'
   switch (phase) {
     case 'deciding':
@@ -32,28 +35,39 @@ function copyFor(phase: HandoffPhase | null, kind: 'image' | 'video' | null, det
     case 'loading_image_model':
       return { text: `Loading the ${what} model…`, sub: 'starting ComfyUI if needed — this can take a moment' }
     case 'generating':
-      return { text: `Generating the ${what}…`, sub: 'VRAM swap in progress — usually 30-90s (longer on a cold start)' }
+      return {
+        text: `Generating the ${what}…`,
+        // Only call it a "VRAM swap" when we actually evicted the chat model.
+        // No eviction (models co-exist) → just an honest timing hint.
+        sub: evicted ? 'VRAM swap in progress — usually 30-90s (longer on a cold start)' : 'usually 30-90s (longer on a cold start)',
+      }
     case 'restoring_text':
-      return { text: 'Restoring the chat model', sub: detail ? `reloading ${detail}` : 'reloading into VRAM' }
+      // Nothing was evicted → the chat model stayed resident, so don't claim a
+      // restore; just show a brief "finishing" beat before done.
+      return evicted
+        ? { text: 'Restoring the chat model', sub: detail ? `reloading ${detail}` : 'reloading into VRAM' }
+        : { text: `Finishing the ${what}…` }
     case 'done':
-      return { text: 'Chat model restored', done: true }
+      return { text: evicted ? 'Chat model restored' : 'Done', done: true }
     case 'error':
-      return { text: 'VRAM swap interrupted', sub: 'the chat model is being restored', done: true }
+      return evicted
+        ? { text: 'VRAM swap interrupted', sub: 'the chat model is being restored', done: true }
+        : { text: 'Generation interrupted', done: true }
     default:
-      return { text: 'Swapping models…' }
+      return { text: 'Working…' }
   }
 }
 
 export function VramSwitchCard() {
-  const { swapping, phase, kind, detail } = useVramHandoff()
+  const { active, evicted, phase, kind, detail } = useVramHandoff()
 
-  // Only render during an actual swap. The `done`/`error` terminal frames flip
-  // `swapping` false immediately, but we still want to flash a brief "restored"
+  // Render for the whole generation. The `done`/`error` terminal frames flip
+  // `active` false immediately, but we still want to flash a brief terminal
   // confirmation, so we also render while the phase is a terminal one.
   const terminal = phase === 'done' || phase === 'error'
-  const visible = swapping || terminal
+  const visible = active || terminal
 
-  const { text, sub, done } = copyFor(phase, kind, detail)
+  const { text, sub, done } = copyFor(phase, kind, detail, evicted)
 
   return (
     <AnimatePresence>
