@@ -229,13 +229,47 @@ function parseChatGpt(raw: unknown): NormalisedConversation[] {
 //       "chat_messages": [
 //         {
 //           "uuid": "...",
-//           "text": "...",
+//           "text": "...",                                  // legacy flat copy, often "" in modern exports
+//           "content": [{ "type": "text", "text": "..." }], // modern message body (preferred)
 //           "sender": "human" | "assistant",
+//           "attachments": [{ "file_name": "...", "extracted_content": "..." }],
 //           "created_at": "..."
 //         }
 //       ]
 //     }
 //   ]
+// Modern Claude exports carry the message body in a typed `content[]` block
+// array ([{ type:'text', text:'…' }, { type:'tool_use', … }]) and frequently
+// leave the flat `text` field EMPTY — so the old `m.text`-only read imported
+// those conversations as 0 messages and dropped them entirely (aldrich,
+// Discord 2026-06-20 "how do i import chats from claude"). Prefer the text
+// blocks, fall back to the flat field, and append any extracted attachment
+// text (mikes_pp also asked for uploaded-file content). Non-text blocks
+// (tool_use / tool_result / thinking) carry no `text` string and are skipped.
+function extractClaudeText(m: any): string {
+  const chunks: string[] = []
+  if (Array.isArray(m?.content)) {
+    for (const blk of m.content) {
+      if (blk && typeof blk === 'object' && typeof blk.text === 'string' && blk.text.trim()) {
+        chunks.push(blk.text.trim())
+      }
+    }
+  }
+  if (chunks.length === 0 && typeof m?.text === 'string' && m.text.trim()) {
+    chunks.push(m.text.trim())
+  }
+  // Pasted / uploaded file contents Claude extracted at chat time.
+  const attachments = Array.isArray(m?.attachments) ? m.attachments : []
+  for (const a of attachments) {
+    const extracted = typeof a?.extracted_content === 'string' ? a.extracted_content.trim() : ''
+    if (extracted) {
+      const fname = typeof a?.file_name === 'string' && a.file_name ? `[attachment: ${a.file_name}]\n` : ''
+      chunks.push(fname + extracted)
+    }
+  }
+  return chunks.join('\n\n').trim()
+}
+
 function parseClaude(raw: unknown): NormalisedConversation[] {
   if (!Array.isArray(raw)) return []
   const out: NormalisedConversation[] = []
@@ -253,7 +287,7 @@ function parseClaude(raw: unknown): NormalisedConversation[] {
     let messageCount = 0
     for (const m of messages as any[]) {
       const sender = String(m?.sender || 'unknown')
-      const text = String(m?.text || '').trim()
+      const text = extractClaudeText(m)
       if (!text) continue
       const heading = sender === 'human' ? '**You**' : (sender === 'assistant' ? '**Assistant**' : `**${sender}**`)
       lines.push(heading, '', text, '')
@@ -363,7 +397,13 @@ export async function parseExportFile(file: File): Promise<ParseResult> {
     // user saw "no conversation file found" (mikes_pp, Discord 2026-06-07).
     const entries: Array<{ path: string; entry: JSZip.JSZipObject }> = []
     zip.forEach((path, entry) => { if (!entry.dir) entries.push({ path, entry }) })
-    const basename = (p: string) => (p.split('/').pop() || '').toLowerCase()
+    // Split on BOTH separators. Standard zips use '/', but Windows tools
+    // (Explorer "Send to > Compressed folder", PowerShell Compress-Archive)
+    // emit BACKSLASH-separated entry names. Without this a Windows-rezipped
+    // export fails the conversations-NNN.json match, drops to the parse-and-pick
+    // fallback, and only ONE shard (~100 chats) imports (verified 2026-06-21
+    // with a 10-shard 1000-chat zip).
+    const basename = (p: string) => (p.split(/[\\/]/).pop() || '').toLowerCase()
     const isJson = (p: string) => p.toLowerCase().endsWith('.json')
 
     // 1) Conversations live in one or more files named conversations.json or,

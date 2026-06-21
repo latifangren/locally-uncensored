@@ -6,7 +6,7 @@ import { VoiceButton } from './VoiceButton'
 import { useVoiceStore } from '../../stores/voiceStore'
 import { useSettingsStore } from '../../stores/settingsStore'
 import { useModelStore } from '../../stores/modelStore'
-import { isThinkingCompatible } from '../../lib/model-compatibility'
+import { isThinkingCompatible, isVisionCompatible } from '../../lib/model-compatibility'
 import type { AgentToolCall } from '../../types/agent-mode'
 import type { ImageAttachment } from '../../types/chat'
 
@@ -58,6 +58,7 @@ export function ChatInput({ onSend, onStop, isGenerating, pendingApproval, onApp
   const updateSettings = useSettingsStore((s) => s.updateSettings)
   const activeModel = useModelStore((s) => s.activeModel)
   const canThink = isThinkingCompatible(activeModel)
+  const canSeeImages = isVisionCompatible(activeModel)
 
   useEffect(() => {
     if (textareaRef.current) {
@@ -92,9 +93,18 @@ export function ChatInput({ onSend, onStop, isGenerating, pendingApproval, onApp
     })
   }
 
+  // Synchronous double-fire guard (David 2026-06-20: "ok generiere jetzt" landed
+  // twice in one chat). The `isGenerating` prop and the cleared input only update
+  // on the NEXT render, so two Enter keydowns in the same tick (key-repeat / IME
+  // / a held Enter) both pass the checks below and send the identical message
+  // twice. A short monotonic lock closes that window.
+  const sendLockRef = useRef(0)
   const handleSend = () => {
     const trimmed = input.trim()
     if ((!trimmed && images.length === 0) || isGenerating || disabled) return
+    const now = Date.now()
+    if (now - sendLockRef.current < 700) return
+    sendLockRef.current = now
     onSend(trimmed || '(image)', images.length > 0 ? images : undefined)
     setInput('')
     setImages([])
@@ -247,6 +257,16 @@ export function ChatInput({ onSend, onStop, isGenerating, pendingApproval, onApp
                 </span>
               </div>
             ))}
+          </div>
+        )}
+
+        {/* Vision hint — a text-only model can't read the attached image.
+            Non-blocking (send still works); the runtime error is also mapped
+            to friendly copy. gthvidsten, GH Discussion #67. */}
+        {images.length > 0 && activeModel && !canSeeImages && (
+          <div className="flex items-start gap-1.5 mb-1.5 px-1 text-[0.55rem] leading-relaxed text-amber-600 dark:text-amber-400">
+            <span className="shrink-0">⚠</span>
+            <span>This model can't read images. Switch to a vision model (Gemma 4, LLaVA, Qwen-VL) to use the attachment.</span>
           </div>
         )}
 

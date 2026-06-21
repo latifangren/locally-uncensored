@@ -19,7 +19,21 @@ export function TokenCounter() {
   // promptTokens already includes the system prompt, tools, RAG and the full
   // history, so totalTokens is the TRUE current context fill. The char/4
   // estimate is only a fallback until the first real reply lands.
-  const lastUsage = [...messages].reverse().find((m) => m.usage && m.usage.totalTokens > 0)?.usage
+  // The counter must not visibly "jump" between turns (David 2026-06-20: "3.5k
+  // springt auf 1.9k", especially after an image/video gen). The model-reported
+  // usage is the size of the COMPACTED prompt that turn — and that legitimately
+  // swings: a turn that feeds the generated image back for vision costs ~3k, the
+  // next turn (image trimmed by compaction, or a regenerate that reuses the prior
+  // args) costs ~1k. Both are "real", so showing the latest made the bar bounce.
+  // Use the conversation's HIGH-WATER real usage instead: it reflects the largest
+  // context this chat has actually reached and never dips just because one turn
+  // compacted harder. A live provisional estimate can still push it higher.
+  const reversed = [...messages].reverse()
+  const realMax = messages.reduce(
+    (mx, m) => (m.usage && !m.usage.estimated && m.usage.totalTokens > mx ? m.usage.totalTokens : mx),
+    0,
+  )
+  const lastUsage = reversed.find((m) => m.usage && m.usage.totalTokens > 0)?.usage
   const estimated = messages.reduce((sum, m) => {
     let tokens = estimateTokens(m.content)
     if (m.thinking) tokens += estimateTokens(m.thinking)
@@ -27,12 +41,13 @@ export function TokenCounter() {
     tokens += 4 // role overhead
     return sum + tokens
   }, 0)
-  const usedTokens = lastUsage ? lastUsage.totalTokens : estimated
-  // "Real" = the model reported it. A provisional estimate the agent loop sets
-  // before the first reply (so the bar reflects the system prompt + tools, not a
-  // char/4 guess of the visible messages) carries `estimated:true` — show it, but
-  // don't claim it's the model's exact count.
-  const isReal = !!lastUsage && !lastUsage.estimated
+  const usedTokens = realMax > 0
+    ? Math.max(realMax, lastUsage?.totalTokens ?? 0)
+    : (lastUsage ? lastUsage.totalTokens : estimated)
+  // "Real" = the model reported it AND that's the number we're showing. If a
+  // larger provisional estimate is on top we display it but don't claim it's the
+  // model's exact count.
+  const isReal = realMax > 0 && usedTokens === realMax
 
   if (!activeConversationId || messages.length === 0) return null
 

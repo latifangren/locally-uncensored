@@ -18,6 +18,7 @@ import { toolRegistry } from '../api/mcp'
 import { usePermissionStore } from '../stores/permissionStore'
 import { isThinkingCompatible, isPlainTextPlanner } from '../lib/model-compatibility'
 import { getToolCallingStrategy, type ToolCallingStrategy } from '../lib/model-compatibility'
+import { isMultimodalUnsupportedError, MULTIMODAL_UNSUPPORTED_MESSAGE } from '../lib/ollama-errors'
 import { log } from '../lib/logger'
 import { buildHermesToolPrompt, buildHermesToolResult, parseHermesToolCalls, stripToolCallTags, hasToolCallTags } from '../api/hermes-tool-calling'
 import { parseLooseToolCalls, stripMatchedCalls, stripToolCallText, canonicalToolName } from '../lib/loose-tool-parse'
@@ -167,7 +168,16 @@ export function useAgentChat() {
     // unset, this is the normal autonomous-agent path (full tool catalog).
     // displayContent: a slash command shows the raw "/commit" the user typed
     // while `userContent` carries the expanded instruction the model receives.
-    opts?: { curatedTools?: readonly string[]; chatToolsMode?: boolean; displayContent?: string },
+    opts?: {
+      curatedTools?: readonly string[]
+      chatToolsMode?: boolean
+      displayContent?: string
+      // Chat-tools router hint (David 2026-06-20): when a bare follow-up like
+      // "nochmal"/"ok generiere jetzt" continues an in-progress media task, the
+      // router passes the task kind + the prior generation's exact args so a weak
+      // model that can't emit the call still gets the SAME media synthesized.
+      mediaHint?: { kind: 'image' | 'video'; args?: Record<string, unknown> }
+    },
   ) => {
     const { activeModel } = useModelStore.getState()
     const { settings } = useSettingsStore.getState()
@@ -535,8 +545,13 @@ export function useAgentChat() {
     // skipped. Caps derive from the user's actual request.
     const userPromptText =
       [...agentMessages].reverse().find((m) => m.role === 'user')?.content || ''
-    const wantsImage = /\b(bild|bilder|foto|image|picture|pic|draw|zeichne|mal(e|en)?|grafik|illustration|render)\b/i.test(userPromptText)
-    const wantsVideo = /\b(video|clip|animier\w*|animate|film|gif|bewegt|motion|mp4|webm)\b/i.test(userPromptText)
+    // Seed the media intent from the router's continuation hint too (David
+    // 2026-06-20): "ok generiere jetzt" carries no noun, so detecting wants from
+    // the last message alone left wantsVideo=false and the synth fallback never
+    // fired on a "regenerate the clip" follow-up. The hint says it's a video task.
+    const hintKind = opts?.mediaHint?.kind
+    const wantsImage = hintKind === 'image' || /\b(bild|bilder|foto|image|picture|pic|draw|zeichne|mal(e|en)?|grafik|illustration|render)\b/i.test(userPromptText)
+    const wantsVideo = hintKind === 'video' || /\b(video|clip|animier\w*|animate|film|gif|bewegt|motion|mp4|webm)\b/i.test(userPromptText)
     const maxImageGen = wantsVideo && !wantsImage ? 0 : 1
     // Video generation is turned OFF in the chat tools (video defaults to
     // 'blocked' + locked toggle, David 2026-06-04). Respect that here so the
@@ -959,34 +974,61 @@ export function useAgentChat() {
         }
 
         let isFinalTurn = toolCalls.length === 0
-        // Dud turn (David 2026-06-04): the model produced empty content + no tool
-        // call → the user used to see ONLY a thinking bubble, no answer.
-        if (isFinalTurn && !turnContent.trim() && executedCallKeys.size === 0) {
-          // 1st dud → retry once with thinking OFF (gemma4 dumps its whole
-          // response into the thinking channel and emits nothing usable).
-          if (!dudRetried && canThinkAgent && !forceNoThink) {
+        // Recovery for a final turn that emitted NO tool call on a media request.
+        // A weak model (gemma4:e4b) fails this two ways (David 2026-06-20, live
+        // chat):
+        //   1. EMPTY content — it dumped everything into the thinking channel and
+        //      emitted nothing usable (the classic "dud turn").
+        //   2. FAKE-GEN PROSE — it WROTE "(generating the video…)" / "the video
+        //      has been generated" as plain text and never called the tool, so the
+        //      user got a confident lie and no media. Every "regenerate" after the
+        //      first clip did exactly this.
+        const mediaPending =
+          (wantsImage && maxImageGen > 0 && imageGenDone === 0) ||
+          (wantsVideo && maxVideoGen > 0 && videoGenDone === 0)
+        const emptyTurn = !turnContent.trim()
+        const fakeGenProse = mediaPending && !emptyTurn && FAKE_MEDIA_GEN_RE.test(turnContent)
+        if (isFinalTurn && executedCallKeys.size === 0 && (emptyTurn || fakeGenProse)) {
+          // 1st EMPTY dud → retry once with thinking OFF (gemma4 dumps its whole
+          // response into the thinking channel). Fake-gen prose is non-empty, so it
+          // skips the retry and goes straight to synthesis.
+          if (emptyTurn && !dudRetried && canThinkAgent && !forceNoThink) {
             dudRetried = true
             forceNoThink = true
             log.info('agent.dud_turn_retry_no_think', { model: activeModel })
             continue
           }
-          // Still nothing AND the user clearly asked for media → a weak model
-          // (gemma4:e4b) often can't emit the tool call at all. Deliver what was
-          // asked by SYNTHESIZING the generation call from the user's prompt, so
-          // "mach mir ein bild von X" works even when the model flakes.
-          if (!mediaSynthesized &&
-              ((wantsImage && maxImageGen > 0 && imageGenDone === 0) ||
-               (wantsVideo && maxVideoGen > 0 && videoGenDone === 0))) {
+          // The user clearly asked for media but the model couldn't emit the call.
+          // SYNTHESIZE it. Prefer the EXACT args of the media being re-made (passed
+          // as mediaHint by the chat-tools router — same prompt, inputImage,
+          // duration) so "nochmal"/"again" reproduces it faithfully; else extract a
+          // prompt from the user's text.
+          if (!mediaSynthesized && mediaPending) {
             mediaSynthesized = true
             const useVideo = wantsVideo && maxVideoGen > 0 && videoGenDone === 0
+            const hintArgs =
+              opts?.mediaHint && opts.mediaHint.kind === (useVideo ? 'video' : 'image')
+                ? opts.mediaHint.args
+                : undefined
+            const synthArgs =
+              hintArgs && Object.keys(hintArgs).length > 0
+                ? hintArgs
+                : { prompt: extractMediaPrompt(userPromptText) }
             toolCalls = [{
               function: {
                 name: useVideo ? 'video_generate' : 'image_generate',
-                arguments: { prompt: extractMediaPrompt(userPromptText) },
+                arguments: synthArgs,
               },
             }] as ToolCall[]
             isFinalTurn = false
-            log.info('agent.media_fallback_synthesized', { tool: toolCalls[0].function.name })
+            // Drop the hallucinated "(generating…)" prose so it never renders above
+            // the real media that is about to be produced.
+            if (fakeGenProse) turnContent = ''
+            log.info('agent.media_fallback_synthesized', {
+              tool: toolCalls[0].function.name,
+              fromHint: !!(hintArgs && Object.keys(hintArgs).length),
+              fakeGenProse,
+            })
           }
         }
         if (isFinalTurn) {
@@ -1313,7 +1355,12 @@ export function useAgentChat() {
       if ((err as Error).name !== 'AbortError') {
         const errorMsg = (err as Error).message || 'Connection failed'
 
-        if (errorMsg.includes('does not support tools')) {
+        if (isMultimodalUnsupportedError(errorMsg)) {
+          useChatStore.getState().updateMessageContent(
+            convId!, assistantMessage.id,
+            MULTIMODAL_UNSUPPORTED_MESSAGE
+          )
+        } else if (errorMsg.includes('does not support tools')) {
           useChatStore.getState().updateMessageContent(
             convId!, assistantMessage.id,
             `This model does not support tool calling.\n\nThe auto-fix could not be applied. Try pulling a standard model like:\n• qwen2.5:7b\n• llama3.1:8b\n• mistral:7b`
@@ -1412,6 +1459,17 @@ export function useAgentChat() {
  * (DE + EN). Used by the dud-turn media fallback when a weak model can't emit
  * the tool call itself. Falls back to the full text if nothing strips.
  */
+/**
+ * Detects a model "pretending" to generate media in plain prose without ever
+ * calling the tool (David 2026-06-20: gemma4 wrote "(Generating 2-second
+ * zoom-in video…)", "the video has been successfully generated", "I am
+ * initiating the generation process" — and produced nothing). Only consulted on
+ * a final, tool-call-less turn where media is still pending, so legitimate
+ * mid-loop narration (which precedes a real tool call) is never affected.
+ */
+export const FAKE_MEDIA_GEN_RE =
+  /\b(generating|regenerat\w*|i('|\s+a)m\s+(now\s+)?(generating|creating|initiat\w*)|i\s+(will|have)\s+(now\s+)?(re)?generat\w*|i\s+am\s+initiat\w*|video\s+generation|image\s+generation|in\s+progress|has\s+been\s+(successfully\s+)?(generated|created|regenerated)|wird\s+(gerade\s+)?(erstellt|generiert)|generiere\s+(jetzt|das|es)|in\s+arbeit)\b|\(\s*(generat|re-?generat|video\s+generat|image\s+generat)/i
+
 export function extractMediaPrompt(text: string): string {
   const p = String(text || '').trim()
   const stripped = p.replace(

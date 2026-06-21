@@ -1013,7 +1013,7 @@ export function SettingsPage() {
               ChatGPT / Claude / Gemini export JSON (or .zip), pre-selects
               every conversation, feeds the chosen ones into the active
               chat's RAG store. */}
-          <Section title="Import past chatbot conversations">
+          <Section title="Import from other chatbots">
             <ChatbotImporter />
           </Section>
 

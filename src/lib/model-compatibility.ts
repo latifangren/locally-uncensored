@@ -163,6 +163,40 @@ export function isThinkingCompatible(modelName: string | null): boolean {
 }
 
 /**
+ * Model families that accept image input (multimodal / vision). Same
+ * name-heuristic approach as THINKING_COMPATIBLE — Ollama exposes no cheap
+ * synchronous capability flag, so we match known vision families and stay
+ * lenient for cloud / OpenAI-compatible endpoints (return true → never
+ * false-warn an LM Studio or cloud vision model). The runtime error mapper
+ * (`isMultimodalUnsupportedError`) is the real safety net for anything that
+ * slips through. gthvidsten (GH Discussion #67) attached an image to a
+ * text-only Ollama build and got a raw 400 with no guidance.
+ */
+const VISION_COMPATIBLE = [
+  'gemma3', 'gemma4',                 // Gemma 3/4 are natively multimodal
+  'llava', 'bakllava',
+  'llama3.2-vision', 'llama4',        // Llama 3.2 Vision, Llama 4
+  'qwen2.5-vl', 'qwen3-vl', 'qwen-vl', 'qwen3.6',
+  'minicpm-v', 'moondream', 'pixtral',
+  'mistral-small3.1', 'mistral-small3.2',
+  'granite3.2-vision', 'internvl', 'glm-4v',
+]
+
+/**
+ * Check whether a model can take image input. Cloud + OpenAI-compatible
+ * endpoints return true (lenient). Ollama text-only families return false so
+ * the composer can show a non-blocking "this model can't read images" hint.
+ */
+export function isVisionCompatible(modelName: string | null): boolean {
+  if (!modelName) return false
+  const providerId = getProviderIdFromModel(modelName)
+  if (providerId === 'openai' || providerId === 'anthropic') return true
+
+  const baseName = normalizeFamily(modelName)
+  return VISION_COMPATIBLE.some(f => containsFamily(f, baseName))
+}
+
+/**
  * Gemma 3/4 are thinking-compatible but their `think: false` path produces
  * plain-text structured planning (`Plan:`, `Constraint Checklist:`,
  * `Confidence Score:`) that has no tags we can strip — the model trained

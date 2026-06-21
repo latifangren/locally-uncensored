@@ -155,3 +155,21 @@ export function chatStyleMessage(parsed: ParsedOllamaError): string {
   }
   return parsed.message
 }
+
+/**
+ * True when an error means the user attached an image to a model with no
+ * vision/multimodal support. Native Ollama and OpenAI-compatible backends word
+ * this differently — gthvidsten (GH Discussion #67, batiai/qwen3.6-27b:q6) saw
+ * the raw OpenAI-style "Multimodal data provided, but model does not support
+ * multimodal requests." with no guidance. Match the common phrasings.
+ */
+const MULTIMODAL_UNSUPPORTED_RE =
+  /multimodal data provided|does not support multimodal|not multimodal|does not support image|image input is not supported|no vision support|vision is not supported/i
+
+export function isMultimodalUnsupportedError(raw: string | null | undefined): boolean {
+  return typeof raw === 'string' && MULTIMODAL_UNSUPPORTED_RE.test(raw)
+}
+
+/** Friendly, actionable copy shown when the chat hits the multimodal-unsupported error. */
+export const MULTIMODAL_UNSUPPORTED_MESSAGE =
+  "This model can't read images. Switch to a vision-capable model (e.g. Gemma 4, LLaVA, Qwen-VL, or Llama 3.2 Vision), or remove the attached image and send again."

@@ -235,6 +235,19 @@ export class OpenAIProvider implements ProviderClient {
         continue
       }
 
+      // LM Studio (and some OpenAI-compat servers) report a mid-stream failure
+      // as a 200 response carrying an SSE error chunk ({ error: { message } } or
+      // a bare { error: "..." }) instead of a non-2xx status, so the !res.ok
+      // guard above never fires. Such a chunk has no `choices`, so the old loop
+      // just skipped it → the user got a SILENT EMPTY reply. Surface it as a
+      // thrown error so the chat layer can map it to a friendly message (e.g.
+      // the #67 image-on-text-model case). Verified live: LM Studio + image on a
+      // text-only model returns `event: error` with HTTP 200 (2026-06-21).
+      const streamErr = (chunk as { error?: { message?: string } | string }).error
+      if (streamErr) {
+        throw new Error(typeof streamErr === 'string' ? streamErr : (streamErr.message || 'Streaming error'))
+      }
+
       // Real token usage — the include_usage final chunk carries `usage` with
       // an empty choices[], so capture it BEFORE the choice guard below.
       const u = (chunk as { usage?: { prompt_tokens?: number; completion_tokens?: number } }).usage

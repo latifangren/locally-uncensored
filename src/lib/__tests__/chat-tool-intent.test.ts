@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import { detectChatToolCapability, detectChatToolIntent, CHAT_TOOLS } from '../chat-tool-intent'
+import {
+  detectChatToolCapability,
+  detectChatToolIntent,
+  isMediaContinuation,
+  resolveChatToolRoute,
+  CHAT_TOOLS,
+  type ChatToolRouteMsg,
+} from '../chat-tool-intent'
 
 describe('detectChatToolCapability', () => {
   it('exposes exactly the five curated tools', () => {
@@ -92,5 +99,90 @@ describe('detectChatToolCapability', () => {
     expect(detectChatToolIntent('draw a cat')).toBe(true)
     expect(detectChatToolIntent('hello')).toBe(false)
     expect(detectChatToolIntent('')).toBe(false)
+  })
+})
+
+// David 2026-06-20 — the real "football" chat: every media FOLLOW-UP missed the
+// single-message detector and dropped to plain chat, so the model planned in
+// circles or faked "(generating…)" and produced nothing.
+describe('isMediaContinuation', () => {
+  for (const p of [
+    'ok go', 'go', 'do it', 'yes', 'jetzt', 'los',
+    '2 seconds just zoom in', '2 seconds', '3s',
+    'nochmal neu', 'noch mal', 'neu', 'again', 'regenerate', 'redo',
+    'geberuere das video neu', // typo'd "generiere" — caught via "neu"
+    'ok generiere jetzt', 'du generierst nix.',
+    'make it longer', 'spin it', 'länger bitte',
+  ]) {
+    it(`continuation: "${p}"`, () => expect(isMediaContinuation(p)).toBe(true))
+  }
+  for (const p of [
+    'thanks', 'thank you', 'danke', 'perfekt', 'cool', 'nice', 'super',
+    'danke das war super', 'stop', 'cancel',
+    'now tell me about cats', // "now" but too long → not a bare continuation
+    'what is the capital of France', 'tell me a joke', 'explain recursion',
+  ]) {
+    it(`not a continuation: "${p}"`, () => expect(isMediaContinuation(p)).toBe(false))
+  }
+})
+
+describe('resolveChatToolRoute — context-aware media continuation', () => {
+  const videoBlock: ChatToolRouteMsg = {
+    role: 'assistant', content: 'Here is your clip',
+    mediaKind: 'video', mediaArgs: { prompt: 'a football, zoom in', inputImage: 'football.png', duration: 2 },
+  }
+
+  it('a direct verb+noun request still routes', () => {
+    expect(resolveChatToolRoute('generate an image of a football', false, [])?.capability).toBe('image')
+    expect(resolveChatToolRoute('make a short video of waves', false, [])?.capability).toBe('video')
+  })
+
+  it('a bare "ok generiere jetzt" reuses the prior video block ARGS (faithful regenerate)', () => {
+    const recent: ChatToolRouteMsg[] = [
+      { role: 'user', content: 'now make a video out of that image' },
+      videoBlock,
+      { role: 'user', content: 'nochmal neu' },
+      { role: 'assistant', content: '(Generating the video…)' }, // the fake-gen turn, no block
+    ]
+    const r = resolveChatToolRoute('ok generiere jetzt', false, recent)
+    expect(r?.capability).toBe('video')
+    expect(r?.mediaHint?.kind).toBe('video')
+    expect(r?.mediaHint?.args).toEqual({ prompt: 'a football, zoom in', inputImage: 'football.png', duration: 2 })
+  })
+
+  it('a continuation infers the kind from an earlier user request when no block exists yet', () => {
+    const recent: ChatToolRouteMsg[] = [
+      { role: 'user', content: 'now make a video out of that image' },
+      { role: 'assistant', content: 'How long should it be, and what motion?' },
+    ]
+    const r = resolveChatToolRoute('2 seconds just zoom in', false, recent)
+    expect(r?.capability).toBe('video')
+    expect(r?.mediaHint?.kind).toBe('video')
+  })
+
+  it('does NOT route a bare continuation with no recent media context', () => {
+    const recent: ChatToolRouteMsg[] = [
+      { role: 'user', content: 'explain recursion' },
+      { role: 'assistant', content: 'Recursion is when a function calls itself…' },
+    ]
+    expect(resolveChatToolRoute('ok go', false, recent)).toBeNull()
+  })
+
+  it('praise after a media turn does NOT re-trigger the tool', () => {
+    expect(resolveChatToolRoute('perfekt danke', false, [videoBlock])).toBeNull()
+  })
+
+  it('a NEW explicit web request after media routes to web, not the sticky media', () => {
+    expect(
+      resolveChatToolRoute('search the web for the weather in Berlin', false, [videoBlock])?.capability,
+    ).toBe('web')
+  })
+
+  it('only looks back a bounded window (stale media far in the past is ignored)', () => {
+    const recent: ChatToolRouteMsg[] = [
+      videoBlock, // oldest
+      ...Array.from({ length: 14 }, (_, i): ChatToolRouteMsg => ({ role: i % 2 ? 'assistant' : 'user', content: `chit chat ${i}` })),
+    ]
+    expect(resolveChatToolRoute('ok go', false, recent)).toBeNull()
   })
 })

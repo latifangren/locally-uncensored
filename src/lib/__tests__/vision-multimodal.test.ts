@@ -1,0 +1,58 @@
+import { describe, it, expect } from 'vitest'
+import { isVisionCompatible } from '../model-compatibility'
+import { isMultimodalUnsupportedError, MULTIMODAL_UNSUPPORTED_MESSAGE } from '../ollama-errors'
+
+// #67 (gthvidsten, GH Discussion) — attaching an image to a text-only model.
+// Two layers: a name-heuristic gate for a proactive composer hint, and a
+// runtime error mapper that catches whatever slips through.
+
+describe('isVisionCompatible', () => {
+  it('accepts known local vision families', () => {
+    expect(isVisionCompatible('gemma4:e4b')).toBe(true)
+    expect(isVisionCompatible('gemma3:12b')).toBe(true)
+    expect(isVisionCompatible('llava:13b')).toBe(true)
+    expect(isVisionCompatible('llama3.2-vision:11b')).toBe(true)
+    expect(isVisionCompatible('qwen2.5-vl:7b')).toBe(true)
+    expect(isVisionCompatible('minicpm-v:8b')).toBe(true)
+    expect(isVisionCompatible('moondream:latest')).toBe(true)
+  })
+  it('accepts dashed / community gemma variants via normalizeFamily', () => {
+    expect(isVisionCompatible('hf.co/mradermacher/Gemma-4-31B-it-abliterated-GGUF:Q4_K_M')).toBe(true)
+  })
+  it('rejects text-only local models', () => {
+    expect(isVisionCompatible('llama3.1:8b')).toBe(false)
+    expect(isVisionCompatible('mistral:7b')).toBe(false)
+    expect(isVisionCompatible('qwen2.5:7b')).toBe(false)
+    expect(isVisionCompatible('deepseek-r1:8b')).toBe(false)
+  })
+  it('stays lenient for cloud providers (never false-warn a cloud vision model)', () => {
+    expect(isVisionCompatible('anthropic::claude-opus-4-20250514')).toBe(true)
+  })
+  it('returns false for null', () => {
+    expect(isVisionCompatible(null)).toBe(false)
+  })
+})
+
+describe('isMultimodalUnsupportedError', () => {
+  it('matches the OpenAI-style multimodal-unsupported 400 (gthvidsten #67)', () => {
+    const raw = '{"error":{"code":400,"message":"Multimodal data provided, but model does not support multimodal requests.","type":"invalid_request_error"}}'
+    expect(isMultimodalUnsupportedError(raw)).toBe(true)
+  })
+  it('matches native-style phrasings', () => {
+    expect(isMultimodalUnsupportedError('this model does not support image input')).toBe(true)
+    expect(isMultimodalUnsupportedError('model is not multimodal')).toBe(true)
+  })
+  it('matches the exact LM Studio 400 wording (verified live 2026-06-21)', () => {
+    // LM Studio returns this bare-string error for an image on a text-only model.
+    expect(isMultimodalUnsupportedError('Model does not support images. Please use a model that does.')).toBe(true)
+  })
+  it('does not match unrelated errors', () => {
+    expect(isMultimodalUnsupportedError('model does not support thinking')).toBe(false)
+    expect(isMultimodalUnsupportedError('connection refused')).toBe(false)
+    expect(isMultimodalUnsupportedError(null)).toBe(false)
+    expect(isMultimodalUnsupportedError(undefined)).toBe(false)
+  })
+  it('exposes actionable, vision-oriented copy', () => {
+    expect(MULTIMODAL_UNSUPPORTED_MESSAGE).toMatch(/vision/i)
+  })
+})

@@ -122,6 +122,64 @@ describe('parseJsonText — Claude', () => {
   })
 })
 
+// Modern Claude export: the body lives in a typed content[] block array and the
+// flat `text` field is empty. The old m.text-only read imported these as
+// 0-message conversations and dropped them entirely (aldrich, Discord
+// 2026-06-20 "how do i import chats from claude"). Also exercises an
+// attachment + non-text blocks (thinking / tool_use) that must be skipped.
+const claudeContentBlocksFixture = JSON.stringify([
+  {
+    uuid: 'cb-1',
+    name: 'Content block chat',
+    created_at: '2026-06-01T10:00:00Z',
+    updated_at: '2026-06-01T10:05:00Z',
+    chat_messages: [
+      {
+        uuid: 'm1', sender: 'human', text: '',
+        content: [{ type: 'text', text: 'summarize the attached file' }],
+        attachments: [{ file_name: 'notes.txt', extracted_content: 'Q3 revenue rose 12 percent.' }],
+      },
+      {
+        uuid: 'm2', sender: 'assistant', text: '',
+        content: [
+          { type: 'thinking', thinking: 'internal reasoning, no text field' },
+          { type: 'tool_use', name: 'calc', input: { a: 1 } },
+          { type: 'text', text: 'Revenue grew 12 percent in Q3.' },
+        ],
+      },
+    ],
+  },
+])
+
+describe('parseJsonText — Claude content[] blocks (modern export)', () => {
+  it('imports messages whose text lives in content[] with an empty flat text field', () => {
+    const r = parseJsonText(claudeContentBlocksFixture)
+    expect(r.detectedPlatform).toBe('claude')
+    expect(r.conversations).toHaveLength(1)
+    const c = r.conversations[0]
+    expect(c.messageCount).toBe(2) // would have been 0 before the content[] fix
+    expect(c.markdown).toContain('summarize the attached file')
+    expect(c.markdown).toContain('Revenue grew 12 percent in Q3.')
+  })
+  it('appends extracted attachment content with its filename', () => {
+    const r = parseJsonText(claudeContentBlocksFixture)
+    const md = r.conversations[0].markdown
+    expect(md).toContain('[attachment: notes.txt]')
+    expect(md).toContain('Q3 revenue rose 12 percent.')
+  })
+  it('skips non-text blocks (thinking / tool_use) without leaking them', () => {
+    const r = parseJsonText(claudeContentBlocksFixture)
+    const md = r.conversations[0].markdown
+    expect(md).not.toContain('internal reasoning')
+    expect(md).not.toContain('tool_use')
+  })
+  it('still handles the legacy flat-text shape', () => {
+    const r = parseJsonText(claudeFixture)
+    expect(r.conversations[0].messageCount).toBe(2)
+    expect(r.conversations[0].markdown).toContain('Explain map vs forEach')
+  })
+})
+
 describe('parseJsonText — Gemini', () => {
   it('extracts the messages array when present', () => {
     const result = parseJsonText(geminiFixture)
@@ -291,5 +349,32 @@ describe('parseExportFile — ChatGPT .zip with dated top-level folder', () => {
     const titles = res.conversations.map((c) => c.title)
     expect(titles).toContain('Shard one chat')
     expect(titles).toContain('Shard two chat')
+  })
+
+  it('merges shards when zip entries use BACKSLASH separators (Windows-rezipped export)', async () => {
+    // Windows tools (Explorer "Compressed folder", PowerShell Compress-Archive)
+    // write backslash-separated entry names. The old basename split on '/' only,
+    // so none matched conversations-NNN.json → fallback picked ONE file (~100
+    // chats). Verified live 2026-06-21 with a 10-shard 1000-chat zip → 100.
+    const folder = '1716800000-winshard'
+    const oneChat = (title: string, part: string) => JSON.stringify([{
+      title,
+      create_time: 1700000000.0,
+      mapping: {
+        root: { id: 'root', message: null, parent: null, children: ['u1'] },
+        u1: { id: 'u1', message: { id: 'u1', author: { role: 'user' }, content: { content_type: 'text', parts: [part] } }, parent: 'root', children: [] },
+      },
+    }])
+    const file = await makeZipFile({
+      [`${folder}\\conversations-000.json`]: oneChat('Win shard one', 'hi one'),
+      [`${folder}\\conversations-001.json`]: oneChat('Win shard two', 'hi two'),
+      [`${folder}\\user.json`]: JSON.stringify({ id: 'user-1' }),
+    }, 'win-rezipped.zip')
+    const res = await parseExportFile(file)
+    expect(res.detectedPlatform).toBe('chatgpt')
+    expect(res.conversations).toHaveLength(2)
+    const titles = res.conversations.map((c) => c.title)
+    expect(titles).toContain('Win shard one')
+    expect(titles).toContain('Win shard two')
   })
 })

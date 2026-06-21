@@ -105,3 +105,102 @@ export function detectChatToolCapability(text: string, hasImages = false): ChatT
 export function detectChatToolIntent(text: string, hasImages = false): boolean {
   return detectChatToolCapability(text, hasImages) !== null
 }
+
+// ── Context-aware media continuation (David 2026-06-20) ────────────────
+//
+// The single-message detector above is blind to conversation context: once a
+// media task is underway, the natural FOLLOW-UPS a user types carry no
+// verb+noun and so DON'T match — "ok go", "2 seconds just zoom in", "nochmal
+// neu", "ok generiere jetzt". Those then fell through to the plain chat path
+// where the image/video tool isn't available, so the model either reasoned in
+// circles ("plan stuck in thinking") or wrote a confident "(generating…)" lie
+// and produced nothing. The helpers below let the router recognise such a
+// follow-up AS a continuation of the in-progress media task and route it (with
+// the original generation's args) back through the tool executor.
+
+// Praise / thanks / explicit stop — these END a media exchange and must NEVER
+// be treated as "do it again".
+const CONT_EXIT_RE = /\b(thanks|thank\s*you|danke|thx|bye|tsch[üu]ss|cool|nice|great|super|perfekt|perfect|stop|stopp|cancel|abbrechen|nevermind|egal|vergiss\s+es)\b/i
+
+// STRONG signals push a media task forward at ANY length (redo / motion / a bare
+// create verb without a noun).
+const STRONG_CONT_RE = /\b(re-?generate|regenerier\w*|nochmal|noch\s*mal|neu|erneut|redo|again|zoom|spin|rotate|\bpan\b|animate|animier\w*|longer|shorter|faster|slower|l[äa]nger|k[üu]rzer|schneller|langsamer|generier\w*|generate)\b/i
+// WEAK signals (confirmations / "now") only count in a SHORT message, so "now"
+// inside "now tell me about cats" never hijacks the media tool.
+const WEAK_CONT_RE = /\b(go|do\s*it|yes|yep|yeah|sure|ok(ay)?|los|mach(\s*(es|mal|schon))?|tu\s*es|proceed|continue|weiter|jetzt|now|please|bitte|create|erstell\w*|render|produce|produzier\w*)\b/i
+// Bare duration like "2 seconds" / "3s" — only sensible as a clip follow-up.
+const BARE_DURATION_RE = /^\s*\d+\s*(s|sec|secs|seconds?|sek|sekunden?|min|minuten?)?\s*$/i
+// A short complaint that nothing was produced should re-trigger the task.
+const CONT_COMPLAINT_RE = /\b(nix|nichts|nicht|kein\w*|nothing|didn'?t|doesn'?t|won'?t)\b/i
+
+/**
+ * True when `text`, ON ITS OWN, is a follow-up that should advance an
+ * already-running media task (caller must confirm there IS one — see
+ * resolveChatToolRoute). Deliberately conservative for weak signals.
+ */
+export function isMediaContinuation(text: string): boolean {
+  const t = lower(text).trim()
+  if (!t) return false
+  if (CONT_EXIT_RE.test(t)) return false
+  if (BARE_DURATION_RE.test(t)) return true
+  if (STRONG_CONT_RE.test(t)) return true
+  const wordCount = t.split(/\s+/).length
+  if (WEAK_CONT_RE.test(t) && wordCount <= 4) return true
+  if (CONT_COMPLAINT_RE.test(t) && wordCount <= 6) return true
+  return false
+}
+
+/** A recent message, reduced to what the router needs (decoupled from Message). */
+export interface ChatToolRouteMsg {
+  role: string
+  content: string
+  /** Set on assistant turns that produced media — the tool kind + its exact args
+   *  so a bare "nochmal"/"again" can reproduce the SAME media deterministically. */
+  mediaKind?: 'image' | 'video'
+  mediaArgs?: Record<string, unknown>
+}
+
+export interface ChatToolRoute {
+  capability: ChatToolCapability
+  /** Present for media routes; `args` carries the prior generation's parameters
+   *  (prompt, inputImage, duration…) for a faithful regenerate. */
+  mediaHint?: { kind: 'image' | 'video'; args?: Record<string, unknown> }
+}
+
+/** How far back to look for the in-progress media task. */
+const MEDIA_CONTEXT_WINDOW = 12
+
+/**
+ * Decide whether a plain-chat message should run through the chat-tools
+ * executor — directly (verb+noun in this message) OR as a continuation of a
+ * recent image/video task. `recent` is the conversation history BEFORE this
+ * message (oldest→newest); the most recent entry is last.
+ */
+export function resolveChatToolRoute(
+  text: string,
+  hasImages: boolean,
+  recent: ChatToolRouteMsg[],
+): ChatToolRoute | null {
+  const direct = detectChatToolCapability(text, hasImages)
+  if (direct) {
+    return direct === 'image' || direct === 'video'
+      ? { capability: direct, mediaHint: { kind: direct } }
+      : { capability: direct }
+  }
+  if (!isMediaContinuation(text)) return null
+
+  const window = recent.slice(-MEDIA_CONTEXT_WINDOW)
+  for (let i = window.length - 1; i >= 0; i--) {
+    const m = window[i]
+    // A prior assistant turn that actually produced media wins — reuse its args.
+    if (m.role === 'assistant' && (m.mediaKind === 'image' || m.mediaKind === 'video')) {
+      return { capability: m.mediaKind, mediaHint: { kind: m.mediaKind, args: m.mediaArgs } }
+    }
+    // Otherwise an earlier user message that asked for media establishes the kind.
+    if (m.role === 'user') {
+      const cap = detectChatToolCapability(m.content)
+      if (cap === 'image' || cap === 'video') return { capability: cap, mediaHint: { kind: cap } }
+    }
+  }
+  return null
+}

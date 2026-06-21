@@ -14,13 +14,34 @@ import { useAgentChat } from "./useAgentChat"
 import { useMemory } from "./useMemory"
 import { useAgentModeStore } from "../stores/agentModeStore"
 import { useGenerationStore } from "../stores/generationStore"
-import { detectChatToolIntent, CHAT_TOOLS } from "../lib/chat-tool-intent"
+import { resolveChatToolRoute, CHAT_TOOLS, type ChatToolRouteMsg } from "../lib/chat-tool-intent"
 import { getProviderForModel, getProviderIdFromModel } from "../api/providers"
 import { syncOllamaHealthFromError } from "../lib/sync-ollama-health"
 import { isThinkingCompatible, isPlainTextPlanner } from "../lib/model-compatibility"
 import { stripNonCanonicalTags, finalStripThinkingTags } from "../lib/thinking-stripper"
-import type { ImageAttachment } from "../types/chat"
+import { isMultimodalUnsupportedError, MULTIMODAL_UNSUPPORTED_MESSAGE } from "../lib/ollama-errors"
+import type { ImageAttachment, Message } from "../types/chat"
 import { log } from "../lib/logger"
+
+/**
+ * Pull the most recent media generation (image/video) out of an assistant
+ * message's agent blocks, with the exact args used. Lets the chat-tools router
+ * reproduce the SAME media for a bare "nochmal"/"again" follow-up. Reads both
+ * the v2.4+ `toolCalls` array and the legacy singular `toolCall`.
+ */
+function lastMediaFromBlocks(m: Message): { kind: 'image' | 'video'; args?: Record<string, unknown> } | null {
+  if (!m.agentBlocks?.length) return null
+  for (let i = m.agentBlocks.length - 1; i >= 0; i--) {
+    const b = m.agentBlocks[i]
+    const calls = b.toolCalls?.length ? b.toolCalls : (b.toolCall ? [b.toolCall] : [])
+    for (let j = calls.length - 1; j >= 0; j--) {
+      const name = calls[j].toolName
+      if (name === 'video_generate') return { kind: 'video', args: calls[j].args }
+      if (name === 'image_generate') return { kind: 'image', args: calls[j].args }
+    }
+  }
+  return null
+}
 
 export function useChat() {
   const [isGenerating, setIsGenerating] = useState(false)
@@ -55,21 +76,32 @@ export function useChat() {
     }
 
     // Chat-Tools routing (David 2026-06-11): web/file/image/video should work
-    // in PLAIN chat without flipping to full Agent mode. When the message
-    // clearly needs one of those capabilities, run THIS turn through the agent
-    // executor with a curated 5-tool allow-list + a chat-style prompt. Pure
-    // conversation falls through to the fast plain path below, untouched — so
-    // normal chatting (and the rikki/thought-only fixes) never regress. (Agent
-    // mode already returned above, so reaching here means Agent is off.)
-    if (
-      activeModel
-      && settings.chatToolsEnabled !== false
-      && detectChatToolIntent(content, !!images?.length)
-    ) {
-      return agentChat.sendAgentMessage(content, images, {
-        curatedTools: CHAT_TOOLS,
-        chatToolsMode: true,
-      })
+    // in PLAIN chat without flipping to full Agent mode. We route a turn through
+    // the chat-tools executor when it needs one of those capabilities — either
+    // DIRECTLY (verb+noun in this message) or as a CONTINUATION of a recent
+    // image/video task (David 2026-06-20: "ok go" / "2 seconds zoom" / "nochmal
+    // neu" / "ok generiere jetzt" used to miss and drop to plain chat, where the
+    // tool is absent → the model planned in circles or faked "(generating…)" and
+    // the token counter halved as the prompt lost its tools+image). For a
+    // continuation we pass the prior generation's args so a bare "nochmal" / "go"
+    // reproduces the SAME media. Pure conversation still falls through to the fast
+    // plain path below, untouched. (Agent mode already returned above.)
+    if (activeModel && settings.chatToolsEnabled !== false) {
+      const activeConv = store.conversations.find((c) => c.id === store.activeConversationId)
+      const recent: ChatToolRouteMsg[] = (activeConv?.messages ?? [])
+        .slice(-12)
+        .map((m) => {
+          const media = m.role === 'assistant' ? lastMediaFromBlocks(m) : null
+          return { role: m.role, content: m.content, mediaKind: media?.kind, mediaArgs: media?.args }
+        })
+      const route = resolveChatToolRoute(content, !!images?.length, recent)
+      if (route) {
+        return agentChat.sendAgentMessage(content, images, {
+          curatedTools: CHAT_TOOLS,
+          chatToolsMode: true,
+          mediaHint: route.mediaHint,
+        })
+      }
     }
 
     if (!activeModel) return
@@ -392,10 +424,26 @@ export function useChat() {
       // leaving the user staring at silent dead air forever.
       if (!abort.signal.aborted && contentRef.current.trim() === "") {
         const captured = (thinkingRef.current || finalStripThinkingTags(hiddenThinking, false)).trim()
-        if (captured) {
+        if (captured && useThinking === true) {
+          // Thinking ON: surface the reasoning so the empty bubble explains
+          // itself (MessageBubble renders it + a nudge) instead of dead air.
           useChatStore
             .getState()
             .updateMessageThinking(convId!, assistantMessage.id, captured)
+        } else if (captured) {
+          // Thinking OFF but the model still reasoned (Gemma keeps reasoning when
+          // we pass `think:undefined`) and produced no visible answer. David
+          // 2026-06-20: OFF must mean NO reasoning shown — never leak the hidden
+          // thinking into the bubble. Leave a short honest note so it isn't
+          // silent dead air. (Media follow-ups now route to the tool path and
+          // won't reach here; this covers a plain Q&A that thought itself out.)
+          useChatStore
+            .getState()
+            .updateMessageContent(
+              convId!,
+              assistantMessage.id,
+              "I didn't return a visible answer that time — please try again.",
+            )
         }
       }
     } catch (err) {
@@ -412,8 +460,16 @@ export function useChat() {
             ? (err as Error).message
             : `Error: ${(err as Error).message || 'Connection failed'}`
 
+        // Image attached to a non-vision model → friendly guidance instead of
+        // the raw 400 JSON (gthvidsten, GH Discussion #67).
+        if (isMultimodalUnsupportedError(errorMsg)) {
+          useChatStore.getState().updateMessageContent(
+            convId!,
+            assistantMessage.id,
+            MULTIMODAL_UNSUPPORTED_MESSAGE
+          )
         // Show user-friendly message for thinking errors
-        if (errorMsg.includes('does not support thinking')) {
+        } else if (errorMsg.includes('does not support thinking')) {
           useChatStore.getState().updateMessageContent(
             convId!,
             assistantMessage.id,
