@@ -85,7 +85,7 @@ vi.mock('../agent-context', () => ({
 // settingsStore is the real module — pure, no services. The orchestrator reads
 // settings.exclusiveVramMode through it; default DEFAULT_SETTINGS = 'auto'.
 
-import { decideUnload, vramHandoffGenerate, pollGone, resolveClip, resolveModelName, resolveI2VResolution, comfyErrorHint, requestGenerationCancel, __resetGenerationStateForTests } from '../vram-handoff'
+import { decideUnload, vramHandoffGenerate, pollGone, resolveClip, resolveModelName, resolveI2VResolution, comfyErrorHint, requestGenerationCancel, resolveTunables, __resetGenerationStateForTests } from '../vram-handoff'
 import { useSettingsStore } from '../../stores/settingsStore'
 
 const GB = 1024 * 1024 * 1024
@@ -669,5 +669,74 @@ describe('vramHandoffGenerate — Stop / cancel gating', () => {
     // The key regression assertion: gen #2 bailed at the epoch check on dequeue
     // and never submitted a second workflow.
     expect(submitWorkflow).toHaveBeenCalledTimes(1)
+  })
+})
+
+// ── Per-model auto-settings (David 2026-06-22: "setze die settings für jedes
+//    image+video modell"). Two layers: resolveTunables must honor the MODEL
+//    default over ComfyUI's generic KSampler caps default (20 steps / cfg 8.0),
+//    and the chat-gen IMAGE path must use per-architecture defaults (Flux cfg 1,
+//    SDXL cfg 7 / dpmpp_2m) instead of one hardcoded cfg 7 for everything. ──
+describe('resolveTunables — honors the model default over the generic caps default', () => {
+  const caps = {
+    cfgRange: { default: 8.0, min: 0, max: 100 },
+    stepsRange: { default: 20, min: 1, max: 200 },
+    usesKSampler: true,
+    availableSamplers: ['euler', 'dpmpp_2m'],
+    availableSchedulers: ['normal', 'karras'],
+  } as any
+
+  it('no user value + caps present → MODEL default (Wan 30/6.0), NOT the generic caps 20/8.0', () => {
+    const t = resolveTunables({ prompt: 'x' } as any, caps, { steps: 30, cfg: 6.0, sampler: 'euler', scheduler: 'normal' })
+    expect(t.cfg).toBe(6.0)
+    expect(t.steps).toBe(30)
+    expect(t.reject).toBeNull()
+  })
+
+  it('explicit in-range user value still applies', () => {
+    const t = resolveTunables({ prompt: 'x', cfg: 4, steps: 40 } as any, caps, { steps: 30, cfg: 6.0, sampler: 'euler', scheduler: 'normal' })
+    expect(t.cfg).toBe(4)
+    expect(t.steps).toBe(40)
+    expect(t.reject).toBeNull()
+  })
+
+  it('explicit OUT-of-range user value is still rejected against the caps range', () => {
+    const tight = { ...caps, stepsRange: { default: 20, min: 1, max: 30 } }
+    const t = resolveTunables({ prompt: 'x', steps: 999 } as any, tight, { steps: 30, cfg: 6.0, sampler: 'euler', scheduler: 'normal' })
+    expect(t.reject).toMatch(/steps/i)
+  })
+})
+
+describe('chat-gen image path — per-architecture defaults (not one hardcoded cfg 7)', () => {
+  beforeEach(() => { getActiveAgentModel.mockReturnValue({ name: 'gpt-4o', providerId: 'openai', remote: false }) })
+
+  it('Flux → cfg 1.0 (distilled; cfg 7 fries it)', async () => {
+    getImageModels.mockResolvedValue([{ name: 'flux1-dev.safetensors', type: 'flux', source: 'diffusion_model' }])
+    buildDynamicWorkflow.mockResolvedValue({})
+    submitWorkflow.mockResolvedValue('pid-1')
+    getHistory.mockResolvedValue(completedHistory())
+    await vramHandoffGenerate('image', { prompt: 'a cat' })
+    expect(buildDynamicWorkflow.mock.calls[0][0].cfgScale).toBe(1.0)
+  })
+
+  it('SDXL → cfg 7.0 + dpmpp_2m / 1024 (architecture-appropriate)', async () => {
+    getImageModels.mockResolvedValue([{ name: 'Juggernaut-XL_v9.safetensors', type: 'sdxl', source: 'checkpoint' }])
+    buildDynamicWorkflow.mockResolvedValue({})
+    submitWorkflow.mockResolvedValue('pid-1')
+    getHistory.mockResolvedValue(completedHistory())
+    await vramHandoffGenerate('image', { prompt: 'a fox' })
+    const p = buildDynamicWorkflow.mock.calls[0][0]
+    expect(p.cfgScale).toBe(7.0)
+    expect(p.sampler).toBe('dpmpp_2m')
+    expect(p.width).toBe(1024)
+  })
+
+  it('SD1.5 → defaults to 512², not 1024²', async () => {
+    getImageModels.mockResolvedValue([{ name: 'sd15.safetensors', type: 'sd15', source: 'checkpoint' }])
+    buildDynamicWorkflow.mockResolvedValue({})
+    submitWorkflow.mockResolvedValue('pid-1')
+    getHistory.mockResolvedValue(completedHistory())
+    await vramHandoffGenerate('image', { prompt: 'a tree' })
+    expect(buildDynamicWorkflow.mock.calls[0][0].width).toBe(512)
   })
 })

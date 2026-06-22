@@ -238,6 +238,17 @@ export interface ModelTypeDefaults {
 }
 
 export const MODEL_TYPE_DEFAULTS: Record<string, ModelTypeDefaults> = {
+  // ── Image (frames/fps = 1; per-architecture so the chat-gen image path stops
+  //    using a single hardcoded cfg 7 for everything — Flux/Z-Image are distilled
+  //    and need a LOW cfg, SD1.5 must default to 512 not 1024). Values mirror the
+  //    Create-tab MODEL_TYPE_DEFAULTS (createStore.ts) so both surfaces agree. ──
+  sd15:   { steps: 25, cfg: 7.0, sampler: 'euler_ancestral', scheduler: 'normal', width: 512,  height: 512,  frames: 1, fps: 1 },
+  sdxl:   { steps: 25, cfg: 7.0, sampler: 'dpmpp_2m',        scheduler: 'karras', width: 1024, height: 1024, frames: 1, fps: 1 },
+  flux:   { steps: 20, cfg: 1.0, sampler: 'euler',           scheduler: 'simple', width: 1024, height: 1024, frames: 1, fps: 1 },
+  flux2:  { steps: 20, cfg: 1.0, sampler: 'euler',           scheduler: 'simple', width: 1024, height: 1024, frames: 1, fps: 1 },
+  zimage: { steps: 12, cfg: 3.5, sampler: 'euler',           scheduler: 'simple', width: 1024, height: 1024, frames: 1, fps: 1 },
+  unknown:{ steps: 25, cfg: 7.0, sampler: 'euler',           scheduler: 'normal', width: 1024, height: 1024, frames: 1, fps: 1 },
+  // ── Video ──
   wan: { steps: 30, cfg: 6.0, sampler: 'euler', scheduler: 'normal', width: 832, height: 480, frames: 81, fps: 16 },
   // Wan 2.2 TI2V-5B — native 1280×704 @ 24 fps, unified T2V/I2V. Default to a
   // VRAM-/speed-friendly 1024×576 16:9 on 12 GB cards (native res is still available

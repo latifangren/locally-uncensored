@@ -964,12 +964,16 @@ async function generateImage(prompt: string, model: string, args: VramHandoffArg
     // Capability-aware: read this model's REAL limits/enums from ComfyUI and
     // REJECT (not clamp) any explicit user value beyond them (decision 2).
     const caps = await fetchCaps(model, 'image')
-    const tun = resolveTunables(args, caps, { steps: 20, cfg: 7, sampler: 'euler', scheduler: 'normal' })
+    // Per-architecture defaults instead of one hardcoded cfg 7 / 1024² for every
+    // image model: Flux/Flux2 are distilled and need cfg 1.0 (cfg 7 fries them),
+    // Z-Image Turbo wants ~3.5 / 12 steps, SD1.5 must default to 512² not 1024².
+    const idef = MODEL_TYPE_DEFAULTS[classifyModel(model)] ?? MODEL_TYPE_DEFAULTS.unknown
+    const tun = resolveTunables(args, caps, { steps: idef.steps, cfg: idef.cfg, sampler: idef.sampler, scheduler: idef.scheduler })
     if (tun.reject) return `Cannot generate: ${tun.reject}`
 
     const a = args as Record<string, unknown>
-    const width = clampInt(a.width, 1024, 64, 4096)
-    const height = clampInt(a.height, 1024, 64, 4096)
+    const width = clampInt(a.width, idef.width, 64, 4096)
+    const height = clampInt(a.height, idef.height, 64, 4096)
     const seed = (typeof a.seed === 'number' && Number.isFinite(a.seed)) ? Math.floor(a.seed) : -1
     const batchSize = clampInt(a.batchSize ?? a.batch_size, 1, 1, 8)
 
@@ -1355,15 +1359,21 @@ interface Tunables { steps: number; cfg: number; sampler: string; scheduler: str
  * video paths. `reject` is non-null only when the USER asked for something the
  * model can't do.
  */
-function resolveTunables(
+export function resolveTunables(
   args: VramHandoffArgs,
   caps: ModelCapabilities | null,
   defs: { steps: number; cfg: number; sampler: string; scheduler: string },
 ): Tunables {
   const a = args as Record<string, unknown>
-  const steps = clampInt(args.steps, caps?.stepsRange?.default ?? defs.steps, 1, 10000)
+  // When the user doesn't specify, fall back to the per-MODEL default (defs) — NOT
+  // caps?.stepsRange?.default / cfgRange?.default. Those come from ComfyUI's generic
+  // KSampler node (20 steps / cfg 8.0 for EVERY model), which over-cooks architectures
+  // that need a low cfg (Wan ~6, Flux/Z-Image distilled ~1-3.5) and under-samples ones
+  // that want 30 (live 2026-06-22: Wan ran at cfg 8 / 20 steps instead of its 6 / 30).
+  // Explicit user values are still range-checked + rejected against caps below.
+  const steps = clampInt(args.steps, defs.steps, 1, 10000)
   const cfgRaw = a.cfg ?? a.cfg_scale ?? a.cfgScale
-  const cfg = clampFloat(cfgRaw, caps?.cfgRange?.default ?? defs.cfg, 0, 100)
+  const cfg = clampFloat(cfgRaw, defs.cfg, 0, 100)
   const samplerRaw = typeof a.sampler === 'string' ? a.sampler : (typeof a.sampler_name === 'string' ? a.sampler_name : undefined)
   const sampler = samplerRaw ?? defs.sampler
   const scheduler = typeof a.scheduler === 'string' ? a.scheduler : defs.scheduler
