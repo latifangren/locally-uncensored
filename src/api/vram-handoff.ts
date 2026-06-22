@@ -555,6 +555,21 @@ export function requestGenerationCancel(): void {
 // successful image generation.
 let _lastImageFilename: string | null = null
 
+/**
+ * Test-only: reset the module-level serialisation/cancel state so each unit test
+ * starts from a clean slate. These vars intentionally persist across a real
+ * session (one in-flight queue, one monotonic seq), so production never calls
+ * this — it exists solely to keep the cancel/epoch/active-handoffs tests isolated.
+ */
+export function __resetGenerationStateForTests(): void {
+  _inFlight = Promise.resolve()
+  _genSeq = 0
+  _cancelledThrough = 0
+  _activeHandoffs = 0
+  _genCancelRequested = false
+  _lastImageFilename = null
+}
+
 // ── Public orchestrator ───────────────────────────────────────────
 
 export interface VramHandoffArgs {
@@ -633,9 +648,6 @@ async function runHandoff(kind: 'image' | 'video', args: VramHandoffArgs, seq: n
   let targetModel: string
   let videoBackend: VideoBackend = 'none'
   try {
-    // A chat-initiated ComfyUI gen is now in flight — gates the ComfyUI
-    // /interrupt in requestGenerationCancel (paired 1:1 with the finally below).
-    _activeHandoffs++
     if (kind === 'image') {
       const models = await getImageModels()
       if (models.length === 0) {
@@ -784,6 +796,15 @@ async function runHandoff(kind: 'image' | 'video', args: VramHandoffArgs, seq: n
   let evictedLms: LmsTextModel | null = null
 
   try {
+    // A chat-initiated ComfyUI gen is now ACTUALLY in flight — we are past every
+    // model-listing early-return above. This gates the ComfyUI /interrupt +
+    // queue-clear in requestGenerationCancel and is paired 1:1 with the
+    // `_activeHandoffs--` in the finally below. It MUST live in THIS try: the
+    // "no model installed" / "model not found" / ComfyUI-unreachable returns in
+    // the DECIDE try return BEFORE here, so incrementing up there leaks the
+    // counter and a later plain-chat Stop would wrongly /interrupt + clear an
+    // unrelated Create-tab render (the exact bug this counter prevents).
+    _activeHandoffs++
     // ── (b) HANDOFF-OUT — only if we decided to unload ─────────────
     if (willUnload && textModel) {
       emitHandoff('freeing_vram', { kind, detail: textModel })

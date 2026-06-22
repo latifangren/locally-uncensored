@@ -32,6 +32,8 @@ const detectVideoBackend = vi.fn()
 const getSystemVRAM = vi.fn()
 const submitWorkflow = vi.fn()
 const getHistory = vi.fn()
+const cancelGeneration = vi.fn()
+const clearComfyQueue = vi.fn()
 const freeMemory = vi.fn()
 const buildDynamicWorkflow = vi.fn()
 const buildTxt2VidWorkflow = vi.fn()
@@ -63,6 +65,8 @@ vi.mock('../comfyui', async () => {
     getSystemVRAM: (...a: unknown[]) => getSystemVRAM(...a),
     submitWorkflow: (...a: unknown[]) => submitWorkflow(...a),
     getHistory: (...a: unknown[]) => getHistory(...a),
+    cancelGeneration: (...a: unknown[]) => cancelGeneration(...a),
+    clearComfyQueue: (...a: unknown[]) => clearComfyQueue(...a),
     freeMemory: (...a: unknown[]) => freeMemory(...a),
     buildTxt2VidWorkflow: (...a: unknown[]) => buildTxt2VidWorkflow(...a),
     // classifyModel, snapToVideoGrid, extractComfyOutputFiles, getImageUrl,
@@ -81,7 +85,7 @@ vi.mock('../agent-context', () => ({
 // settingsStore is the real module — pure, no services. The orchestrator reads
 // settings.exclusiveVramMode through it; default DEFAULT_SETTINGS = 'auto'.
 
-import { decideUnload, vramHandoffGenerate, pollGone, resolveClip, resolveModelName, resolveI2VResolution, comfyErrorHint } from '../vram-handoff'
+import { decideUnload, vramHandoffGenerate, pollGone, resolveClip, resolveModelName, resolveI2VResolution, comfyErrorHint, requestGenerationCancel, __resetGenerationStateForTests } from '../vram-handoff'
 import { useSettingsStore } from '../../stores/settingsStore'
 
 const GB = 1024 * 1024 * 1024
@@ -97,6 +101,10 @@ beforeEach(() => {
   getSystemVRAM.mockReset()
   submitWorkflow.mockReset()
   getHistory.mockReset()
+  cancelGeneration.mockReset()
+  clearComfyQueue.mockReset()
+  cancelGeneration.mockResolvedValue(undefined)
+  clearComfyQueue.mockResolvedValue(undefined)
   freeMemory.mockReset()
   buildDynamicWorkflow.mockReset()
   buildTxt2VidWorkflow.mockReset()
@@ -582,5 +590,84 @@ describe('resolveModelName — fuzzy model match (David 2026-06-04: "FramePack" 
   })
   it('returns null for an empty installed list', () => {
     expect(resolveModelName('FramePack', [])).toBeNull()
+  })
+})
+
+// ── Stop / cancel: epoch + active-handoffs gating (fb28854 review fixes) ──
+//
+// Three things this guards, all from the 2026-06-22 self-review:
+//   - PLAIN-chat Stop (no media gen running) must NOT /interrupt + clear the
+//     ENTIRE ComfyUI queue — that would kill an unrelated Create-tab render or
+//     another client's job. Gated by _activeHandoffs.
+//   - That gate must NOT leak: a gen that early-returns in the DECIDE phase
+//     ("no model installed", "model not found", ComfyUI unreachable) used to
+//     increment _activeHandoffs and never decrement it, so a LATER plain Stop
+//     wrongly nuked ComfyUI. (The increment now lives in the generate try.)
+//   - BACK-TO-BACK Stop: a 2nd gen queued behind the 1st on the in-flight mutex
+//     must be cancelled by one Stop (cancel epoch), never reaching submit.
+describe('vramHandoffGenerate — Stop / cancel gating', () => {
+  beforeEach(() => {
+    __resetGenerationStateForTests()
+  })
+
+  it('plain-chat Stop with NO media generation in flight is a no-op against ComfyUI', () => {
+    requestGenerationCancel()
+    expect(cancelGeneration).not.toHaveBeenCalled()
+    expect(clearComfyQueue).not.toHaveBeenCalled()
+  })
+
+  it('a Stop AFTER a gen that failed in the DECIDE phase still does NOT touch ComfyUI (no _activeHandoffs leak)', async () => {
+    // "no image model installed" returns inside the DECIDE try, before anything
+    // is submitted. The active-handoffs counter must be back at 0, so a later
+    // plain Stop is a no-op. (Regression guard: the increment used to sit in the
+    // DECIDE try, so this early-return leaked it to 1.)
+    getActiveAgentModel.mockReturnValue({ name: 'llama3:8b', providerId: 'ollama', remote: false })
+    getImageModels.mockResolvedValue([])
+    const out = await vramHandoffGenerate('image', { prompt: 'x' })
+    expect(out).toMatch(/no image model installed/i)
+
+    requestGenerationCancel()
+    expect(cancelGeneration).not.toHaveBeenCalled()
+    expect(clearComfyQueue).not.toHaveBeenCalled()
+  })
+
+  it('a Stop while a media gen IS in flight DOES /interrupt ComfyUI and clear the queue', async () => {
+    getActiveAgentModel.mockReturnValue({ name: 'gpt-4o', providerId: 'openai', remote: false })
+    getImageModels.mockResolvedValue([{ name: 'sdxl.safetensors', type: 'sdxl', source: 'checkpoint' }])
+    buildDynamicWorkflow.mockResolvedValue({})
+    submitWorkflow.mockResolvedValue('pid-stop')
+    // Never completes → the gen sits in the poll loop (active) when we Stop.
+    getHistory.mockResolvedValue({ status: { completed: false } })
+
+    const genP = vramHandoffGenerate('image', { prompt: 'a cat' })
+    await vi.waitFor(() => expect(submitWorkflow).toHaveBeenCalled())
+    requestGenerationCancel()
+    const out = await genP
+
+    expect(cancelGeneration).toHaveBeenCalled()
+    expect(clearComfyQueue).toHaveBeenCalled()
+    expect(out).toMatch(/cancelled/i)
+  })
+
+  it('back-to-back: one Stop cancels BOTH the running gen and a 2nd queued behind it (epoch), 2nd never submits', async () => {
+    getActiveAgentModel.mockReturnValue({ name: 'gpt-4o', providerId: 'openai', remote: false })
+    getImageModels.mockResolvedValue([{ name: 'sdxl.safetensors', type: 'sdxl', source: 'checkpoint' }])
+    buildDynamicWorkflow.mockResolvedValue({})
+    submitWorkflow.mockResolvedValue('pid-1')
+    getHistory.mockResolvedValue({ status: { completed: false } }) // gen #1 sits polling
+
+    const g1 = vramHandoffGenerate('image', { prompt: 'first' })   // seq 1
+    const g2 = vramHandoffGenerate('image', { prompt: 'second' })  // seq 2, parks on g1
+    // Only gen #1 should have reached submit so far.
+    await vi.waitFor(() => expect(submitWorkflow).toHaveBeenCalledTimes(1))
+
+    requestGenerationCancel() // _cancelledThrough = 2 → cancels #1 (running) AND #2 (queued)
+    const [o1, o2] = await Promise.all([g1, g2])
+
+    expect(o1).toMatch(/cancelled/i)
+    expect(o2).toMatch(/cancelled/i)
+    // The key regression assertion: gen #2 bailed at the epoch check on dequeue
+    // and never submitted a second workflow.
+    expect(submitWorkflow).toHaveBeenCalledTimes(1)
   })
 })
