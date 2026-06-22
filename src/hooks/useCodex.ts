@@ -8,6 +8,7 @@ import { getProviderForModel, getProviderIdFromModel } from '../api/providers'
 import { toolRegistry } from '../api/mcp'
 import { usePermissionStore } from '../stores/permissionStore'
 import { getToolCallingStrategy } from '../lib/model-compatibility'
+import { CODEX_CONFIRM_TOOLS } from './codexShellGate'
 import { buildHermesToolPrompt, buildHermesToolResult, parseHermesToolCalls, stripToolCallTags, hasToolCallTags } from '../api/hermes-tool-calling'
 import { chatNonStreaming } from '../api/agents'
 import { setActiveChatId, clearActiveChatId, chatWorkspaceSlug, setActiveWorkspace, setActiveAgentModel } from '../api/agent-context'
@@ -1180,9 +1181,26 @@ export function useCodex() {
           execute: (name: string, args: Record<string, any>) => dispatchTool(name, args),
           lookupCache: convId ? makeInTurnCacheLookup({ convId, turnStartMs }) : undefined,
           explainError: (toolName, err) => explainToolError(toolName, err),
-          // Codex is auto-approve (coding agent runs unattended). The
-          // awaitApproval hook is intentionally omitted so the executor
-          // dispatches immediately.
+          // Codex is auto-approve by default (the coding agent runs unattended).
+          // H2 gate: when settings.codexConfirmShell is on, pause the
+          // arbitrary-exec tools for an explicit confirm — the mitigation for a
+          // prompt-injected model auto-running shell/code. window.confirm works
+          // in this Tauri webview (the app uses it elsewhere, e.g. Gallery).
+          awaitApproval: settings.codexConfirmShell
+            ? async (req) => {
+                if (!CODEX_CONFIRM_TOOLS.has(req.toolName)) return true
+                const a = req.args || {}
+                const preview = String(a.command ?? a.code ?? a.script ?? '').slice(0, 800)
+                const msg =
+                  `Coding agent wants to run "${req.toolName}":\n\n` +
+                  `${preview || '(no command preview)'}\n\n` +
+                  `Allow it to run?`
+                if (typeof window !== 'undefined' && typeof window.confirm === 'function') {
+                  return window.confirm(msg)
+                }
+                return true
+              }
+            : undefined,
           recordAudit: (entry) => {
             if (!convId) return
             if (entry.kind === 'start') {

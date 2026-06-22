@@ -10,6 +10,70 @@ import { config } from 'dotenv'
 import { fileURLToPath } from 'url'
 import { dirname } from 'path'
 import os from 'os'
+import dns from 'node:dns'
+import net from 'node:net'
+
+// ── Dev-server SSRF guard ───────────────────────────────────────
+// The dev proxies that fetch a *user-supplied* ?url= (proxy-image,
+// proxy-download) are an SSRF sink: a markdown image / download link could
+// point the server at an internal address (169.254.169.254 metadata, LAN
+// boxes, localhost services). The packaged desktop app routes these through
+// the Rust proxy, which has the strong validate_public_url guard
+// (src-tauri/src/commands/proxy.rs); this is the parity guard for the
+// `npm run dev` / web build (konata's SSH-tunnel path). Best-effort against
+// DNS-rebind — this is a dev server, not the production trust boundary.
+function isBlockedIp(ip: string): boolean {
+  const v = net.isIP(ip)
+  if (v === 4) {
+    const p = ip.split('.').map(Number)
+    if (p.length !== 4 || p.some((n) => Number.isNaN(n) || n < 0 || n > 255)) return true
+    const [a, b] = p
+    if (a === 0) return true // 0.0.0.0/8 "this host"
+    if (a === 10) return true // 10/8 private
+    if (a === 127) return true // loopback
+    if (a === 169 && b === 254) return true // link-local + 169.254.169.254 cloud metadata
+    if (a === 172 && b >= 16 && b <= 31) return true // 172.16/12 private
+    if (a === 192 && b === 168) return true // 192.168/16 private
+    if (a === 100 && b >= 64 && b <= 127) return true // 100.64/10 CGNAT
+    if (a >= 224) return true // multicast + reserved
+    return false
+  }
+  if (v === 6) {
+    const lc = ip.toLowerCase().replace(/^\[|\]$/g, '')
+    if (lc === '::1' || lc === '::') return true // loopback / unspecified
+    if (lc.startsWith('fe80')) return true // link-local
+    if (lc.startsWith('fc') || lc.startsWith('fd')) return true // ULA fc00::/7
+    const mapped = lc.match(/::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/)
+    if (mapped) return isBlockedIp(mapped[1]) // IPv4-mapped IPv6
+    return false
+  }
+  return false // not an IP literal — caller resolves DNS and re-checks
+}
+
+async function assertPublicUrl(urlStr: string): Promise<URL> {
+  let u: URL
+  try {
+    u = new URL(urlStr)
+  } catch {
+    throw new Error('invalid url')
+  }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error('scheme not allowed')
+  const host = u.hostname.replace(/^\[|\]$/g, '')
+  if (!host) throw new Error('no host')
+  if (host === 'localhost' || host.toLowerCase().endsWith('.localhost')) throw new Error('blocked host')
+  // Reject all-digit decimal / 0x-hex integer hosts (inet_aton SSRF encodings).
+  if (/^\d+$/.test(host) || /^0x[0-9a-f]+$/i.test(host)) throw new Error('blocked numeric host')
+  if (net.isIP(host)) {
+    if (isBlockedIp(host)) throw new Error('blocked ip')
+    return u
+  }
+  const addrs = await dns.promises.lookup(host, { all: true })
+  if (!addrs.length) throw new Error('dns empty')
+  for (const a of addrs) {
+    if (isBlockedIp(a.address)) throw new Error('blocked resolved ip')
+  }
+  return u
+}
 
 // Load .env file from project root
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -454,24 +518,34 @@ function comfyLauncher(): Plugin {
       server.middlewares.use('/local-api/proxy-image', (req, res) => {
         const imgUrl = new URL(req.url || '', 'http://localhost').searchParams.get('url')
         if (!imgUrl) { res.writeHead(400); res.end(); return }
-        const proto = imgUrl.startsWith('https') ? https : http
-        proto.get(imgUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } }, (upstream) => {
-          if (upstream.statusCode && upstream.statusCode >= 300 && upstream.statusCode < 400 && upstream.headers.location) {
-            proto.get(upstream.headers.location, { headers: { 'User-Agent': 'Mozilla/5.0' } }, (redir) => {
-              res.writeHead(redir.statusCode || 200, {
-                'Content-Type': redir.headers['content-type'] || 'image/jpeg',
-                'Cache-Control': 'public, max-age=86400',
-              })
-              redir.pipe(res)
-            }).on('error', () => { res.writeHead(502); res.end() })
-            return
-          }
-          res.writeHead(upstream.statusCode || 200, {
-            'Content-Type': upstream.headers['content-type'] || 'image/jpeg',
-            'Cache-Control': 'public, max-age=86400',
-          })
-          upstream.pipe(res)
-        }).on('error', () => { res.writeHead(502); res.end() })
+        const deny = () => { res.writeHead(403, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'blocked by SSRF guard' })) }
+        // Validate the original URL, then re-validate the redirect target (a
+        // public host can 30x to an internal one).
+        assertPublicUrl(imgUrl).then((u) => {
+          const proto = u.protocol === 'https:' ? https : http
+          proto.get(imgUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } }, (upstream) => {
+            if (upstream.statusCode && upstream.statusCode >= 300 && upstream.statusCode < 400 && upstream.headers.location) {
+              const loc = upstream.headers.location
+              upstream.resume() // drain the redirect body
+              assertPublicUrl(loc).then((lu) => {
+                const lproto = lu.protocol === 'https:' ? https : http
+                lproto.get(loc, { headers: { 'User-Agent': 'Mozilla/5.0' } }, (redir) => {
+                  res.writeHead(redir.statusCode || 200, {
+                    'Content-Type': redir.headers['content-type'] || 'image/jpeg',
+                    'Cache-Control': 'public, max-age=86400',
+                  })
+                  redir.pipe(res)
+                }).on('error', () => { res.writeHead(502); res.end() })
+              }).catch(deny)
+              return
+            }
+            res.writeHead(upstream.statusCode || 200, {
+              'Content-Type': upstream.headers['content-type'] || 'image/jpeg',
+              'Cache-Control': 'public, max-age=86400',
+            })
+            upstream.pipe(res)
+          }).on('error', () => { res.writeHead(502); res.end() })
+        }).catch(deny)
       })
 
       // API: Proxy download (follows redirects server-side, avoids CORS)
@@ -483,26 +557,34 @@ function comfyLauncher(): Plugin {
           return
         }
 
-        const protocol = url.startsWith('https') ? https : http
         const fetchUrl = (targetUrl: string, redirectCount = 0) => {
           if (redirectCount > 5) {
             res.writeHead(502, { 'Content-Type': 'application/json' })
             res.end(JSON.stringify({ error: 'Too many redirects' }))
             return
           }
-          protocol.get(targetUrl, { headers: { 'User-Agent': 'LocallyUncensored/1.0' } }, (upstream) => {
-            if (upstream.statusCode && upstream.statusCode >= 300 && upstream.statusCode < 400 && upstream.headers.location) {
-              fetchUrl(upstream.headers.location, redirectCount + 1)
-              return
-            }
-            res.writeHead(upstream.statusCode || 200, {
-              'Content-Type': upstream.headers['content-type'] || 'application/octet-stream',
-              'Content-Length': upstream.headers['content-length'] || '',
+          // Validate every hop (initial URL + each redirect target) so a public
+          // host can't 30x the server into an internal address.
+          assertPublicUrl(targetUrl).then((u) => {
+            const protocol = u.protocol === 'https:' ? https : http
+            protocol.get(targetUrl, { headers: { 'User-Agent': 'LocallyUncensored/1.0' } }, (upstream) => {
+              if (upstream.statusCode && upstream.statusCode >= 300 && upstream.statusCode < 400 && upstream.headers.location) {
+                upstream.resume()
+                fetchUrl(upstream.headers.location, redirectCount + 1)
+                return
+              }
+              res.writeHead(upstream.statusCode || 200, {
+                'Content-Type': upstream.headers['content-type'] || 'application/octet-stream',
+                'Content-Length': upstream.headers['content-length'] || '',
+              })
+              upstream.pipe(res)
+            }).on('error', (err) => {
+              res.writeHead(502, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ error: err.message }))
             })
-            upstream.pipe(res)
-          }).on('error', (err) => {
-            res.writeHead(502, { 'Content-Type': 'application/json' })
-            res.end(JSON.stringify({ error: err.message }))
+          }).catch(() => {
+            res.writeHead(403, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'blocked by SSRF guard' }))
           })
         }
         fetchUrl(url)

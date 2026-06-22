@@ -11,6 +11,7 @@ pub mod process;
 pub mod proxy;
 pub mod remote;
 pub mod search;
+pub mod secret;
 pub mod shell;
 pub mod system;
 pub mod tts;

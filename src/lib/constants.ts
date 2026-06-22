@@ -59,6 +59,9 @@ export const DEFAULT_SETTINGS: Settings = {
   codexRepoMapLimit: 20,
   codexStageMode: false,
   codexReviewMode: false,
+  // H2 security gate. OFF by default = the autonomous coding agent keeps
+  // running shell/code unattended; ON pauses each exec for a confirm.
+  codexConfirmShell: false,
   defaultWorkspace: null,
   // v8: user-uploaded profile picture (base64 data URL, ≤256px). '' = default icon.
   userAvatarDataUrl: '',

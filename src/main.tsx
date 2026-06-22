@@ -17,6 +17,17 @@ async function boot() {
     import('./App.tsx'),
     import('./components/ui/ErrorBoundary'),
   ])
+  // H5: load provider API keys from the OS keychain (Win/macOS) before the UI
+  // can issue a provider call, migrating any old localStorage key into the
+  // vault. Time-boxed so a wedged keychain can never block launch; no-op /
+  // localStorage fallback on Linux + the web build.
+  try {
+    const { useProviderStore } = await import('./stores/providerStore')
+    await Promise.race([
+      useProviderStore.getState().hydrateProviderKeys(),
+      new Promise((resolve) => setTimeout(resolve, 3000)),
+    ])
+  } catch { /* keychain hydration is best-effort */ }
   createRoot(rootEl).render(
     <StrictMode>
       <ErrorBoundary root>

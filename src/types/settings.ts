@@ -136,6 +136,16 @@ export interface Settings {
    */
   codexReviewMode: boolean
   /**
+   * Confirm shell / code execution in the coding agent (security gate, H2).
+   * The coding agent auto-runs tools unattended by design. When this is on,
+   * every `shell_execute` / `code_execute` / background-shell call pauses for
+   * an explicit confirm first — the mitigation for prompt-injection RCE
+   * (a tool result or read file steering the model into running a command).
+   * Default OFF preserves the autonomous workflow; file_write is unaffected
+   * (it is path-jailed and has its own Stage mode).
+   */
+  codexConfirmShell: boolean
+  /**
    * Shared default workspace for Codex AND Agent (Underlying refactor —
    * workspace unification). When set, both surfaces resolve relative paths
    * against this folder by default; a per-chat override wins when present.

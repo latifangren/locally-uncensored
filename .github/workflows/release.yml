@@ -13,6 +13,10 @@ on:
 permissions:
   contents: write
 
+# Third-party actions are pinned to a full commit SHA (not a moving tag) so a
+# compromised or retagged upstream release can't run with our signing secrets
+# in scope. This job has TAURI_SIGNING_PRIVATE_KEY in env — pinning matters most
+# here. The trailing comment records the human-readable version.
 jobs:
   build-tauri:
     strategy:
@@ -30,7 +34,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           # Build from the release's target branch (master) instead of the tag ref.
           # Prevents shipping a stale snapshot when fixes land after tag creation
@@ -38,17 +42,17 @@ jobs:
           ref: ${{ github.event.release.target_commitish || 'master' }}
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
 
       - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
           targets: ${{ matrix.rust_targets }}
 
       - name: Rust cache
-        uses: swatinem/rust-cache@v2
+        uses: swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           workspaces: './src-tauri -> target'
 
@@ -75,7 +79,7 @@ jobs:
         run: npm ci
 
       - name: Build and release Tauri app
-        uses: tauri-apps/tauri-action@v0.5
+        uses: tauri-apps/tauri-action@51a9f1156b33df106d827c3a78f8f894946c5faa # v0.5.25
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}

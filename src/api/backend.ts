@@ -617,6 +617,29 @@ export async function downloadComfyFile(filename: string, subfolder: string = ''
   }
 }
 
+// ── Provider key keychain (H5) ──────────────────────────────────
+// Thin wrappers over the Rust secret_* commands (Windows Credential Manager /
+// macOS Keychain). They reject on the web build (no Tauri) and on Linux desktop
+// (the command reports unsupported), which is how providerStore detects "no
+// keychain here" and falls back to the obfuscated-localStorage path.
+export async function secretSet(account: string, value: string): Promise<void> {
+  if (!isTauri()) throw new Error('keychain unavailable (web build)')
+  const invoke = await getInvoke()
+  await invoke('secret_set', { account, value })
+}
+
+export async function secretGet(account: string): Promise<string | null> {
+  if (!isTauri()) throw new Error('keychain unavailable (web build)')
+  const invoke = await getInvoke()
+  return (await invoke('secret_get', { account })) as string | null
+}
+
+export async function secretDelete(account: string): Promise<void> {
+  if (!isTauri()) throw new Error('keychain unavailable (web build)')
+  const invoke = await getInvoke()
+  await invoke('secret_delete', { account })
+}
+
 /** Fetch an external URL as text — works in both Tauri and dev mode */
 export async function fetchExternal(url: string): Promise<string> {
   if (isTauri()) {

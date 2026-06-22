@@ -647,6 +647,11 @@ function CodexAgentSettings() {
         enabled={settings.codexReviewMode}
         onChange={() => updateSettings({ codexReviewMode: !settings.codexReviewMode })}
       />
+      <InlineToggle
+        label="Confirm shell & code commands (prevents prompt-injection from auto-running commands)"
+        enabled={settings.codexConfirmShell}
+        onChange={() => updateSettings({ codexConfirmShell: !settings.codexConfirmShell })}
+      />
     </div>
   )
 }

@@ -58,6 +58,16 @@ windows-sys = { version = "0.59", features = ["Win32_System_JobObjects", "Win32_
 # installs in C:\Program Files\LM Studio that techx69 reported on v2.4.3).
 winreg = "0.55"
 
+# OS keychain for provider API keys (H5). Windows Credential Manager + macOS
+# Keychain only — both backends are built into the OS, so no extra system
+# libraries are pulled in. Deliberately NOT on Linux: the secret-service
+# backend needs libdbus/gnome-keyring and fails on headless/minimal desktops,
+# so Linux keeps the obfuscated-localStorage path (the frontend falls back when
+# the secret_* commands report unsupported). default-features off avoids the
+# crate's sync-secret-service default.
+[target.'cfg(any(target_os = "windows", target_os = "macos"))'.dependencies]
+keyring = { version = "3", default-features = false, features = ["apple-native", "windows-native"] }
+
 [profile.release]
 panic = "abort"
 codegen-units = 1

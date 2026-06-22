@@ -173,6 +173,10 @@ fn main() {
             commands::download::resume_download,
             commands::download::detect_model_path,
             commands::download::check_model_sizes,
+            // Provider API-key keychain (H5)
+            commands::secret::secret_set,
+            commands::secret::secret_get,
+            commands::secret::secret_delete,
             // Web search
             commands::search::web_search,
             commands::search::web_fetch,

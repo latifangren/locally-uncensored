@@ -4265,6 +4265,36 @@ pub async fn start_tunnel(
             return Err(format!("Download HTTP {}", resp.status()));
         }
         let bytes = resp.bytes().await.map_err(|e| e.to_string())?;
+
+        // Integrity gate before we write + chmod +x + spawn a downloaded binary.
+        // cloudflared pins to `releases/latest` on purpose (the self-heal design:
+        // a frozen version 500's once trycloudflare's tunnel API moves on), so a
+        // static SHA-256 pin isn't compatible here. Instead verify the three
+        // things we *can* assert about `latest`: it came over HTTPS from the
+        // official host, it's a plausible binary size, and it has the platform's
+        // executable magic bytes. This rejects a MITM'd HTML error page, a
+        // truncated download, or a swapped host before any of it is executed.
+        if !download_url.starts_with("https://github.com/") {
+            return Err("Refusing to fetch cloudflared from a non-github.com URL".into());
+        }
+        if bytes.len() < 1_000_000 {
+            // cloudflared is tens of MB; under 1 MB is an error page / truncation.
+            return Err(format!(
+                "cloudflared download too small ({} bytes) — looks like an error page, not the binary",
+                bytes.len()
+            ));
+        }
+        let magic_ok = if cfg!(windows) {
+            bytes.starts_with(b"MZ") // PE executable
+        } else if cfg!(target_os = "linux") {
+            bytes.starts_with(&[0x7f, b'E', b'L', b'F']) // ELF
+        } else {
+            bytes.starts_with(&[0x1f, 0x8b]) // gzip (.tgz for darwin)
+        };
+        if !magic_ok {
+            return Err("cloudflared download failed integrity check (unexpected file header)".into());
+        }
+
         std::fs::write(&cf_path, &bytes).map_err(|e| format!("write: {}", e))?;
 
         // Make executable on Unix
