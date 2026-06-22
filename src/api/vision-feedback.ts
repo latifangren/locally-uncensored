@@ -56,7 +56,13 @@ export async function buildVisionFeedback(
   result: string,
 ): Promise<VisionFeedbackMessage | null> {
   if (!result) return null
-  if (toolName !== 'image_generate' && toolName !== 'video_generate') return null
+  // ONLY image_generate produces a still the vision model can read. A video_generate
+  // result is ALWAYS a video — not just mp4/webm but also ComfyUI VHS animated .webp /
+  // .gif previews, which slip past urlIsVideo's mp4/webm-only check; fed to Ollama as
+  // an image they return HTTP 400 "Failed to load image or audio file" (live 2026-06-22:
+  // gemma4 + Wan T2V .webp output → spurious post-gen agent error). The call site's own
+  // comment already intends to no-op for video results — this makes that real.
+  if (toolName !== 'image_generate') return null
   const m = result.match(COMFY_VIEW_RE)
   if (!m) return null
   const url = m[1]
